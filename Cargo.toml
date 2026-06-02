@@ -1,0 +1,13 @@
+[package]
+name = "pst_reader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+helper_lib = { git = "https://github.com/rayzinnz/rust-helper-lib.git", features = ["log", "datetime"] }
+log = "0.x"
+simplelog = "0.x"
+chrono = "0.4.44"
+compressed-rtf = "1.0.1"
+num_enum = "0.7.6"
