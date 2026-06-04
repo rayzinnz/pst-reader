@@ -50,7 +50,7 @@ pub enum PropType {
 // ref: https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxprops/37dd7329-97a4-42ff-974d-d805ac4d7211
 #[allow(dead_code)]
 #[repr(u16)]
-#[derive(Debug, PartialEq, TryFromPrimitive)]
+#[derive(Debug, PartialEq, TryFromPrimitive, Eq, Hash, Clone)]
 pub enum PropId {
 	Unknown = 0x0000,
 	Access = 0x0FF4,

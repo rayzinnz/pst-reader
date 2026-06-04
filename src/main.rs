@@ -1,12 +1,13 @@
 // C:\Users\hrag\Sync\Programming\cfbf_cdf_ole_format_filetype_notes.md
 // 
 
-use std::{collections::{HashMap, HashSet}, fs::File, io::{Read, Seek, SeekFrom}, path::Path};
+use std::{collections::HashMap, fs::File, io::{Read, Seek, SeekFrom}, ops::Deref, path::Path};
 
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 use helper_lib::{datetime::windows_filetime_to_utc, strings::{string_from_utf16_as_vec_u8, vec_u8_as_hex}};
 use log::*;
+use num_enum::TryFromPrimitive;
 
 mod property_definitions;
 use property_definitions::{PropId,PropType};
@@ -56,6 +57,14 @@ enum BlockType {
     HeapOnNode,
     XBlock,
     XXBlock,
+}
+
+#[repr(u8)]
+#[derive(Debug, PartialEq, TryFromPrimitive)]
+enum RecipientType {
+    To = 0x01,
+    Cc = 0x02,
+    Bcc = 0x03,
 }
 
 #[derive(Debug)]
@@ -141,6 +150,32 @@ struct PropertyEntry {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+struct ColumnEntry {
+    tag: u32,
+    data_offset: u16,
+    data_size: u8,
+    ceb_bit: u8,
+    property: Property,
+    value_string: Option<Vec<String>>,
+    value_bool: Option<Vec<bool>>,
+    value_i16: Option<Vec<i16>>,
+    value_i32: Option<Vec<i32>>,
+    value_i64: Option<Vec<i64>>,
+    value_f32: Option<Vec<f32>>,
+    value_f64: Option<Vec<f64>>,
+    value_datetime: Option<Vec<DateTime<Utc>>>,
+    value_binary: Option<Vec<Vec<u8>>>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct TableRows {
+    num_rows: usize,
+    rows: HashMap<PropId, ColumnEntry>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
 struct Property {
     prop_id: PropId,
     prop_type: PropType,
@@ -158,12 +193,10 @@ impl Property {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct TcColumn {
-    tag: u32,
-    property: Property,
-    data_offset: u16,
-    data_size: u8,
-    ceb_bit: u8,
+struct Recipient {
+    display_name: String,
+    email_address: String,
+    recipient_type: RecipientType,
 }
 
 // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5faf4800-645d-49d1-9457-2ac40eb467bd
@@ -260,7 +293,7 @@ Value	Friendly name	        Meaning
             // println!("{}: {:?}, {:?}", nid, node, bbt);
             // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/18d7644e-cb33-4e11-95c0-34d8a84fbff6
             if node.nid_type==0x02 { //NID_TYPE_NORMAL_FOLDER
-                // let property_entries = process_block_data(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
+                // let property_entries = get_properties(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
                 // // println!("{:#?}", property_entries);
                 // for propery_entry in property_entries {
                 //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
@@ -289,7 +322,7 @@ Value	Friendly name	        Meaning
                 // // println!("{}", String::from_utf8_lossy(&block_data));
 
                 // let prop_ids = Some(vec![PropId::DisplayName]);
-                // let property_entries = process_block_data(prop_ids, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
+                // let property_entries = get_properties(prop_ids, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
                 // // // println!("{:#?}", property_entries);
                 // for propery_entry in property_entries {
                 //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
@@ -301,7 +334,7 @@ Value	Friendly name	        Meaning
             } else if node.nid_type==0x11 { //17 NID_TYPE_ATTACHMENT_TABLE
                 // println!("{}: {:?}", nid, node);
             } else if node.nid_type==0x05 { //NID_TYPE_ATTACHMENT
-                // let property_entries = process_block_data(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
+                // let property_entries = get_properties(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
                 // // println!("{:#?}", property_entries);
                 // for propery_entry in property_entries {
                 //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
@@ -317,7 +350,43 @@ Value	Friendly name	        Meaning
     Ok(())
 }
 
-fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<()> {
+fn get_column_entry_string(column_entries: &HashMap<PropId, ColumnEntry>, prop_id: PropId, irow: usize) -> Result<String> {
+    match column_entries.get(&prop_id) {
+        Some(column_entry) => {
+            match column_entry.value_string.as_ref() {
+                Some(rows) => {
+                    Ok(rows[irow].clone())
+                },
+                None => {
+                    bail!("no rows of type string in the column entry {:?}", column_entry)
+                }
+            }
+        },
+        None => {
+            bail!("no column {:?} in column_entries", prop_id)
+        }
+    }
+}
+
+fn get_column_entry_i32(column_entries: &HashMap<PropId, ColumnEntry>, prop_id: PropId, irow: usize) -> Result<i32> {
+    match column_entries.get(&prop_id) {
+        Some(column_entry) => {
+            match column_entry.value_i32.as_ref() {
+                Some(rows) => {
+                    Ok(rows[irow])
+                },
+                None => {
+                    bail!("no rows of type i32 in the column entry {:?}", column_entry)
+                }
+            }
+        },
+        None => {
+            bail!("no column {:?} in column_entries", prop_id)
+        }
+    }
+}
+
+fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<Vec<Recipient>> {
     let recipients_node = node.sub_nodes.iter().find(|n| n.1.nid_type==0x12);
     println!("{:?}", recipients_node);
     if let Some(recipients_node) = recipients_node {
@@ -327,7 +396,22 @@ fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>
         // println!("{}, {}", block_info.size, block_data.len());
         // println!("{}", vec_u8_as_hex(&block_data, true, " "));
         
-        let property_entries = process_block_data(None, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
+        let prop_ids = Some(vec![PropId::DisplayName, PropId::SmtpAddress, PropId::RecipientType]);
+        let table_rows = get_table(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
+        // println!("{:#?}", table_rows);
+        for irow in 0..table_rows.num_rows {
+            let column_entries = &table_rows.rows;
+            let display_name = get_column_entry_string(column_entries, PropId::DisplayName, irow)?;
+            let email_address = get_column_entry_string(column_entries, PropId::SmtpAddress, irow)?;
+            let recipient_type = get_column_entry_i32(column_entries, PropId::RecipientType, irow)?;
+            let recipient_type = RecipientType::try_from(recipient_type as u8).unwrap_or(RecipientType::To);
+            let recipient = Recipient {
+                display_name: display_name.clone(),
+                email_address: email_address.clone(),
+                recipient_type,
+            };
+            println!("{}: {:#?}", irow, recipient);
+        }
 
         // let block_type = get_block_type(&block_data, b_crypt_method)?;
         // println!("block_type: {block_type:?}");
@@ -364,7 +448,247 @@ fn get_block_type(block_data:&Vec<u8>, b_crypt_method:&u8) -> Result<BlockType> 
     }
 }
 
-fn process_block_data(prop_ids:Option<Vec<PropId>>, mut block_data:&mut Vec<u8>, node:&Node, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<(Vec<PropertyEntry>)> {
+fn get_table(prop_ids:&Option<Vec<PropId>>, block_data:&mut Vec<u8>, node:&Node, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<TableRows> {
+    let block_type = get_block_type(block_data, b_crypt_method)?;
+        
+    if block_type==BlockType::HeapOnNode || block_type==BlockType::XBlock {
+        let hn_blocks: Vec<HNBlock> = get_hn_blocks(block_data, b_crypt_method, file, bbt_map)?;
+        let b_client_sig = hn_blocks[0].b_client_sig;
+        if b_client_sig == 0x7C { //bTypePC Property Context (PC/BTH)
+            return Ok(get_table_context(prop_ids, &hn_blocks, node, bbt_map, file, b_crypt_method)?);
+        } else {
+            //ref https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/8e4ae05c-3c24-4103-b7e5-ffef6f244834
+            bail!("get_table(): b_client_sig {:02X} not implemented", b_client_sig)
+        }
+    } else if block_type==BlockType::XXBlock {
+        bail!("XXBlock not implemented")
+    } else {
+        // HNPAGEHDR https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/9c34ecf8-36bc-45a1-a2df-ee35c6dc840a
+        let page_map_loc = u16::from_le_bytes([block_data[0], block_data[1]]);
+        let page_map = &block_data[page_map_loc as usize..];
+        let num_chunks = u16::from_le_bytes([page_map[0], page_map[1]]);
+        for i in 0..num_chunks {
+            let offset_start = u16::from_le_bytes([page_map[i as usize*2+4], page_map[i as usize*2+5]]) as usize;
+            let offset_end = u16::from_le_bytes([page_map[i as usize*2+6], page_map[i as usize*2+7]]) as usize;
+            // println!("{}: {}-{}", i, offset_start, offset_end);
+            let chunk = &block_data[offset_start..offset_end];
+            // println!("    {}", vec_u8_as_hex(&chunk[0..4], true, " "));
+            // println!("{}", string_from_utf16_as_vec_u8(&chunk));
+        }
+        // println!("{}", vec_u8_as_hex(&block_data, true, " "));
+        // println!("{}", string_from_utf16_as_vec_u8(&block_data[3..]));
+        // println!("{}", block_data.len());
+        // println!("{}", page_map_loc);
+        bail!("block_type {:?} not programmed for", block_type)
+    }
+}
+
+fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, node:&Node, bbt_map: &HashMap<u64, BlockInfo>, file: &mut File, b_crypt_method:&u8) -> Result<TableRows> {
+    //table context
+    // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5e48be0d-a75a-4918-a277-50408ff96740
+    // The underlying TC data is separated into 3 entries: a header with Column descriptors, a RowIndex (a nested BTH), and the actual table data (known as the Row Matrix).
+    //TCINFO header https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/45b3a0c5-d6d6-4e02-aebf-13766ff693f0
+    let hid = &hn_blocks[0].hid_user_root;
+    let tcinfo = &hn_blocks[hid.hid_block_index as usize].bth_chunks[hid.hid_index as usize];
+    // println!("tcinfo: {}", vec_u8_as_hex(&tcinfo, true, " "));
+    let b_type = tcinfo[0];
+    if b_type!=0x7C {
+        bail!("btype {:02X} MUST be 0x7C bTypeTC", b_type)
+    }
+    let c_cols = tcinfo[1]; //Column count.
+    // let rgib = &tcinfo[2..10];
+    let rgib_0_4b = u16::from_le_bytes(tcinfo[2..4].try_into().unwrap()); //TCI_4b Ending offset of 8- and 4-byte data value group.
+    let rgib_1_2b = u16::from_le_bytes(tcinfo[4..6].try_into().unwrap()); //TCI_2b Ending offset of 2-byte data value group.
+    let rgib_2_1b = u16::from_le_bytes(tcinfo[6..8].try_into().unwrap()); //TCI_1b Ending offset of 1-byte data value group.
+    let rgib_3_bm = u16::from_le_bytes(tcinfo[8..10].try_into().unwrap()); //TCI_bm Ending offset of the Cell Existence Block.
+    let hid_row_index = Hid::new(u32::from_le_bytes(tcinfo[10..14].try_into().unwrap()));
+    let hnid_rows = Hid::new(u32::from_le_bytes(tcinfo[14..18].try_into().unwrap()));
+    // let hid_index = &tcinfo[18..22]; //Deprecated. Ignore.
+    let rg_tcoldesc = &tcinfo[22..];
+    // println!("tcinfo: {:02X}, {}, ({},{},{},{}), {:?}, {:?}, {}", b_type, c_cols, rgib_0_4b,rgib_1_2b,rgib_2_1b,rgib_3_bm, hid_row_index, hnid_rows, rg_tcoldesc.len());
+    // println!("rg_tcoldesc: {}\n{}", rg_tcoldesc.len(), vec_u8_as_hex(&rg_tcoldesc, true, " "));
+
+    //TCOLDESC https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/3a2f63cf-bb40-4559-910c-e55ec43d9cbb
+    let mut prev_tag:u32 = 0;
+    //let mut data_cols:Vec<ColumnEntry> = Vec::new();
+    let mut data_cols:HashMap<PropId, ColumnEntry> = HashMap::new();
+    for i in 0..c_cols as usize {
+    // for chunk in rg_tcoldesc.chunks_exact(8) {
+        let chunk = &rg_tcoldesc[i*8..i*8+8];
+        let property = Property::new([chunk[2],chunk[3],chunk[0],chunk[1]]);
+        let tag = u32::from_le_bytes(chunk[0..4].try_into().unwrap());
+        if property.prop_id!=PropId::Unknown && property.prop_type!=PropType::Unknown {
+            // println!("property: {}, {:?}", vec_u8_as_hex(&chunk[0..4], true, " "), property);
+            let ib_data = u16::from_le_bytes(chunk[4..6].try_into().unwrap()); //Data Offset
+            let cb_data = chunk[6]; //Data size
+            let i_bit = chunk[7];
+            // println!("  tcoldesc: {}: {},{},{},{}, {:?}", i, tag, ib_data, cb_data, i_bit, property);
+            if prop_ids.is_none() || prop_ids.as_ref().unwrap().contains(&property.prop_id) {
+                let mut value_string: Option<Vec<String>> = None;
+                let mut value_bool: Option<Vec<bool>> = None;
+                let mut value_i16: Option<Vec<i16>> = None;
+                let mut value_i32: Option<Vec<i32>> = None;
+                let mut value_i64: Option<Vec<i64>> = None;
+                let mut value_f32: Option<Vec<f32>> = None;
+                let mut value_f64: Option<Vec<f64>> = None;
+                let mut value_datetime: Option<Vec<DateTime<Utc>>> = None;
+                let mut value_binary: Option<Vec<Vec<u8>>> = None;
+                match property.prop_type {
+                    PropType::String => {value_string = Some(Vec::new())}
+                    PropType::String8 => {value_string = Some(Vec::new())}
+                    PropType::Boolean => {value_bool = Some(Vec::new())}
+                    PropType::Integer16 => {value_i16 = Some(Vec::new())}
+                    PropType::Integer32 => {value_i32 = Some(Vec::new())}
+                    PropType::Integer64 => {value_i64 = Some(Vec::new())}
+                    PropType::Floating32 => {value_f32 = Some(Vec::new())}
+                    PropType::Floating64 => {value_f64 = Some(Vec::new())}
+                    PropType::Time => {value_datetime = Some(Vec::new())}
+                    PropType::Binary => {value_binary = Some(Vec::new())}
+                    _ => {bail!("get_table_context(): TODO handle property type {:?}", property.prop_type)}
+                }
+                data_cols.insert(property.prop_id.clone(),
+                    ColumnEntry { 
+                        tag,
+                        data_offset: ib_data,
+                        data_size: cb_data,
+                        ceb_bit: i_bit,
+                        property,
+                        value_string,
+                        value_bool,
+                        value_i16,
+                        value_i32,
+                        value_i64,
+                        value_f32,
+                        value_f64,
+                        value_datetime,
+                        value_binary,
+                    }
+                );
+            }
+        }
+        if prev_tag > tag {
+            bail!("The entries in this array MUST be sorted by the tag field of TCOLDESC. Ref: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/45b3a0c5-d6d6-4e02-aebf-13766ff693f0");
+        }
+        prev_tag = tag;
+    }
+
+    //TCROWID https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/e20b5cf4-ea56-48b8-a8fa-e086c9b862ca
+    let tcrowid = get_bytes_from_hid(hid_row_index.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
+    // println!("tcrowid: {}", vec_u8_as_hex(&tcrowid, true, " "));
+    let bth_header = tcrowid;
+    let b_type = bth_header[0]; //MUST be bTypeBTH.
+    assert_eq!(b_type, 0xB5); //b_type must be bTypeBTH (181, 0xB5)
+    let hid = Hid::new(u32::from_le_bytes(bth_header[4..8].try_into().unwrap()));
+    let tcrowid = get_bytes_from_hid(hid.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
+    // println!("tcrowid: {}", vec_u8_as_hex(&tcrowid, true, " "));
+    let num_rows = tcrowid.len() / 8;
+    for irow in 0..num_rows {
+        let dw_row_id = u32::from_le_bytes(tcrowid[irow*8+0..irow*8+4].try_into().unwrap());
+        let dw_row_index = u32::from_le_bytes(tcrowid[irow*8+4..irow*8+8].try_into().unwrap());
+        // println!("  tcrowid: {}: {}, {}", irow, dw_row_id, dw_row_index);
+    }
+
+    //Row Matrix //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/7f5ec68f-d4fd-404f-95c3-fe3495a034ec
+    let rows = get_bytes_from_hid(hnid_rows.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
+    // println!("rows: {} / {} = {}", rows.len(), rgib_3_bm, rows.len() / rgib_3_bm as usize);
+    // let display_name_col = tccols.iter().find(|c| c.property.prop_id==PropId::DisplayName).unwrap();
+    // let email_address_col = tccols.iter().find(|c| c.property.prop_id==PropId::SmtpAddress).unwrap();
+    let sizeof_block = 8192;
+    let sizeof_blocktrailer = 16;
+    let block_datasize = sizeof_block - sizeof_blocktrailer;
+    let rows_per_block = block_datasize / rgib_3_bm as usize;
+    if rows_per_block < num_rows {
+        bail!("TODO, handle when num_rows > rows_per_block: {} > {}", num_rows, rows_per_block)
+    }
+    for irow in 0..num_rows {
+        let iblock = irow / rows_per_block;
+        let irowinblock = irow % rows_per_block;
+        let row = &rows[irow*rgib_3_bm as usize..irow*rgib_3_bm as usize+rgib_3_bm as usize];
+        // println!("row: {}:\n{}", irow, vec_u8_as_hex(&row, true, " "));
+        let rg_ceb = &row[rgib_2_1b as usize..rgib_3_bm as usize];
+        for (_, col) in data_cols.iter_mut() {
+            let mut value_string: String = String::new();
+            let mut value_bool: bool = bool::default();
+            let mut value_i16: i16 = 0;
+            let mut value_i32: i32 = 0;
+            let mut value_i64: i64 = 0;
+            let mut value_f32: f32 = 0f32;
+            let mut value_f64: f64 = 0f64;
+            let mut value_datetime: DateTime<Utc> = DateTime::default();
+            let mut value_binary: Vec<u8> = Vec::default();
+            
+            let f_ceb: bool = (rg_ceb[col.ceb_bit as usize / 8] & (1 << (7 - (col.ceb_bit % 8)))) != 0;
+
+            if f_ceb {
+                let mut prop_value = row[col.data_offset as usize..col.data_offset as usize + col.data_size as usize].to_vec();
+                // println!("    {}; {}", vec_u8_as_hex(&prop_value, true, " "), string_from_utf16_as_vec_u8(&prop_value));
+                if [PropType::String, PropType::String8,PropType::Integer64,PropType::Floating64,PropType::Binary,PropType::Time,PropType::Guid].contains(&col.property.prop_type) {
+                    prop_value = get_bytes_from_hid(u32::from_le_bytes(prop_value.try_into().unwrap()), &hn_blocks, node, bbt_map, file, b_crypt_method)?;
+                }
+                match col.property.prop_type {
+                    PropType::String => { value_string = string_from_utf16_as_vec_u8(&prop_value); }
+                    PropType::String8 => { value_string = String::from_utf8_lossy(&prop_value).to_string(); }
+                    PropType::Boolean => { value_bool = prop_value[0]==1; }
+                    PropType::Integer16 => { value_i16 = i16::from_le_bytes(prop_value[0..2].try_into().unwrap()); }
+                    PropType::Integer32 => { value_i32 = i32::from_le_bytes(prop_value.try_into().unwrap()); }
+                    PropType::Integer64 => { value_i64 = i64::from_le_bytes(prop_value.try_into().unwrap()); }
+                    PropType::Floating32 => { value_f32 = f32::from_le_bytes(prop_value.try_into().unwrap()); }
+                    PropType::Floating64 => { value_f64 = f64::from_le_bytes(prop_value.as_slice().try_into().unwrap()); }
+                    PropType::Time => { value_datetime = windows_filetime_to_utc(u64::from_le_bytes(prop_value.try_into().unwrap())); }
+                    PropType::Binary => { value_binary = prop_value; }
+                    _ => {bail!("get_table_context(): TODO handle property type {:?}", col.property.prop_type)}
+                }
+            }
+
+            match col.property.prop_type {
+                PropType::String => { col.value_string.as_mut().unwrap().push(value_string) }
+                PropType::String8 => { col.value_string.as_mut().unwrap().push(value_string) }
+                PropType::Boolean => { col.value_bool.as_mut().unwrap().push(value_bool) }
+                PropType::Integer16 => { col.value_i16.as_mut().unwrap().push(value_i16) }
+                PropType::Integer32 => { col.value_i32.as_mut().unwrap().push(value_i32) }
+                PropType::Integer64 => { col.value_i64.as_mut().unwrap().push(value_i64) }
+                PropType::Floating32 => { col.value_f32.as_mut().unwrap().push(value_f32) }
+                PropType::Floating64 => { col.value_f64.as_mut().unwrap().push(value_f64) }
+                PropType::Time => { col.value_datetime.as_mut().unwrap().push(value_datetime) }
+                PropType::Binary => { col.value_binary.as_mut().unwrap().push(value_binary) }
+                _ => {bail!("get_table_context(): TODO handle property type {:?}", col.property.prop_type)}
+            }
+        }
+    }
+
+    // println!("{:#?}", data_cols);
+
+    return Ok(TableRows { num_rows: num_rows, rows: data_cols } );
+
+}
+
+fn get_hn_blocks(mut block_data:&mut Vec<u8>, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<Vec<HNBlock>> {
+    let block_type = get_block_type(block_data, b_crypt_method)?;
+    if block_type==BlockType::HeapOnNode {
+        if *b_crypt_method == 1 {
+            //NDB_CRYPT_PERMUTE
+            //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5faf4800-645d-49d1-9457-2ac40eb467bd
+            decode_permute(&mut block_data);
+        }
+        let hn_block = get_hn_block(block_data, 0)?;
+        // println!("hn_block: {:?}", hn_block);
+        return Ok(vec![hn_block]);
+    } else if block_type==BlockType::XBlock {
+        let xblock_blocks = get_xblock_blocks(file, bbt_map, block_data, b_crypt_method)?;
+        let mut hn_blocks: Vec<HNBlock> = Vec::new();
+        for (iblock, xblock_block) in xblock_blocks.iter().enumerate() {
+            // let mut xblock_block = xblock_block;
+            hn_blocks.push(get_hn_block(&mut xblock_block.to_vec(), iblock as usize)?);
+        }
+        return Ok(hn_blocks);
+    } else if block_type==BlockType::XXBlock {
+        bail!("XXBlock not implemented")
+    } else {
+        bail!("blocktype {:?} not implemented", block_type)
+    }
+}
+
+fn get_object_properties(prop_ids:Option<Vec<PropId>>, block_data:&mut Vec<u8>, node:&Node, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<(Vec<PropertyEntry>)> {
     // Block data types:
     // Heap-on-Node (HN) (block_data[2]==0xEC)
     // XBLOCK (block_data[0]==0x01)
@@ -383,116 +707,15 @@ Data Block
     └── Properties (e.g. 0x3001 = name)
 */
         
-    if block_type==BlockType::HeapOnNode {
-        if *b_crypt_method == 1 {
-            //NDB_CRYPT_PERMUTE
-            //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5faf4800-645d-49d1-9457-2ac40eb467bd
-            decode_permute(&mut block_data);
-        }
-        let hn_block = get_hn_block(block_data, 0)?;
-        // println!("hn_block: {:?}", hn_block);
-        let hn_blocks: Vec<HNBlock> = vec![hn_block];
+    if block_type==BlockType::HeapOnNode || block_type==BlockType::XBlock {
+        let hn_blocks: Vec<HNBlock> = get_hn_blocks(block_data, b_crypt_method, file, bbt_map)?;
         let b_client_sig = hn_blocks[0].b_client_sig;
         if b_client_sig == 0xBC { //bTypePC Property Context (PC/BTH)
             return Ok(process_heap_node(prop_ids, &hn_blocks, node, bbt_map, file, b_crypt_method)?);
-        } else if b_client_sig == 0x7C { // bTypeTC Table Context (TC/HN)
-            //table context
-            // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5e48be0d-a75a-4918-a277-50408ff96740
-            // The underlying TC data is separated into 3 entries: a header with Column descriptors, a RowIndex (a nested BTH), and the actual table data (known as the Row Matrix).
-            //TCINFO header https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/45b3a0c5-d6d6-4e02-aebf-13766ff693f0
-            let hid = &hn_blocks[0].hid_user_root;
-            let tcinfo = &hn_blocks[hid.hid_block_index as usize].bth_chunks[hid.hid_index as usize];
-            // println!("tcinfo: {}", vec_u8_as_hex(&tcinfo, true, " "));
-            let b_type = tcinfo[0];
-            if b_type!=0x7C {
-                bail!("btype {:02X} MUST be 0x7C bTypeTC", b_type)
-            }
-            let c_cols = tcinfo[1]; //Column count.
-            // let rgib = &tcinfo[2..10];
-            let rgib_0_4b = u16::from_le_bytes(tcinfo[2..4].try_into().unwrap()); //TCI_4b Ending offset of 8- and 4-byte data value group.
-            let rgib_1_2b = u16::from_le_bytes(tcinfo[4..6].try_into().unwrap()); //TCI_2b Ending offset of 2-byte data value group.
-            let rgib_2_1b = u16::from_le_bytes(tcinfo[6..8].try_into().unwrap()); //TCI_1b Ending offset of 1-byte data value group.
-            let rgib_3_bm = u16::from_le_bytes(tcinfo[8..10].try_into().unwrap()); //TCI_bm Ending offset of the Cell Existence Block.
-            let hid_row_index = Hid::new(u32::from_le_bytes(tcinfo[10..14].try_into().unwrap()));
-            let hnid_rows = Hid::new(u32::from_le_bytes(tcinfo[14..18].try_into().unwrap()));
-            // let hid_index = &tcinfo[18..22]; //Deprecated. Ignore.
-            let rg_tcoldesc = &tcinfo[22..];
-            println!("tcinfo: {:02X}, {}, ({},{},{},{}), {:?}, {:?}, {}", b_type, c_cols, rgib_0_4b,rgib_1_2b,rgib_2_1b,rgib_3_bm, hid_row_index, hnid_rows, rg_tcoldesc.len());
-            println!("rg_tcoldesc: {}\n{}", rg_tcoldesc.len(), vec_u8_as_hex(&rg_tcoldesc, true, " "));
-
-            //TCOLDESC https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/3a2f63cf-bb40-4559-910c-e55ec43d9cbb
-            let mut prev_tag:u32 = 0;
-            let mut tccols:Vec<TcColumn> = Vec::new();
-            for i in 0..c_cols as usize {
-            // for chunk in rg_tcoldesc.chunks_exact(8) {
-                let chunk = &rg_tcoldesc[i*8..i*8+8];
-                let property = Property::new([chunk[2],chunk[3],chunk[0],chunk[1]]);
-                println!("property: {}, {:?}", vec_u8_as_hex(&chunk[0..4], true, " "), property);
-                let tag = u32::from_le_bytes(chunk[0..4].try_into().unwrap());
-                let ib_data = u16::from_le_bytes(chunk[4..6].try_into().unwrap()); //Data Offset
-                let cb_data = chunk[6]; //Data size
-                let i_bit = chunk[7];
-                // println!("  tcoldesc: {}: {},{},{},{}, {:?}", i, tag, ib_data, cb_data, i_bit, property);
-                let tccol = TcColumn {tag, property, data_offset: ib_data, data_size: cb_data, ceb_bit: i_bit};
-                println!("  tccol: {}: {:?}", i, tccol);
-                tccols.push(tccol);
-                if prev_tag > tag {
-                    bail!("The entries in this array MUST be sorted by the tag field of TCOLDESC. Ref: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/45b3a0c5-d6d6-4e02-aebf-13766ff693f0");
-                }
-                prev_tag = tag;
-            }
-
-            //TCROWID https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/e20b5cf4-ea56-48b8-a8fa-e086c9b862ca
-            let tcrowid = get_bytes_from_hid(hid_row_index.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
-            // println!("tcrowid: {}", vec_u8_as_hex(&tcrowid, true, " "));
-            let bth_header = tcrowid;
-            let b_type = bth_header[0]; //MUST be bTypeBTH.
-            assert_eq!(b_type, 0xB5); //b_type must be bTypeBTH (181, 0xB5)
-            let hid = Hid::new(u32::from_le_bytes(bth_header[4..8].try_into().unwrap()));
-            let tcrowid = get_bytes_from_hid(hid.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
-            // println!("tcrowid: {}", vec_u8_as_hex(&tcrowid, true, " "));
-            let num_rows = tcrowid.len() / 8;
-            for irow in 0..num_rows {
-                let dw_row_id = u32::from_le_bytes(tcrowid[irow*8+0..irow*8+4].try_into().unwrap());
-                let dw_row_index = u32::from_le_bytes(tcrowid[irow*8+4..irow*8+8].try_into().unwrap());
-                println!("  tcrowid: {}: {}, {}", irow, dw_row_id, dw_row_index);
-            }
-
-            //Row Matrix //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/7f5ec68f-d4fd-404f-95c3-fe3495a034ec
-            let rows = get_bytes_from_hid(hnid_rows.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
-            println!("rows: {} / {} = {}", rows.len(), rgib_3_bm, rows.len() / rgib_3_bm as usize);
-            let display_name_col = tccols.iter().find(|c| c.property.prop_id==PropId::DisplayName).unwrap();
-            let email_address_col = tccols.iter().find(|c| c.property.prop_id==PropId::SmtpAddress).unwrap();
-            let sizeof_block = 8192;
-            let sizeof_blocktrailer = 16;
-            let block_datasize = sizeof_block - sizeof_blocktrailer;
-            let rows_per_block = block_datasize / rgib_3_bm as usize;
-            for irow in 0..num_rows {
-                let iblock = irow / rows_per_block;
-                let irowinblock = irow % rows_per_block;
-                let row = &rows[irow*rgib_3_bm as usize..irow*rgib_3_bm as usize+rgib_3_bm as usize];
-                println!("row: {}:\n{}", irow, vec_u8_as_hex(&row, true, " "));
-                let dn = &row[display_name_col.data_offset as usize..display_name_col.data_offset as usize + display_name_col.data_size as usize];
-                let dn_bytes = get_bytes_from_hid(u32::from_le_bytes(dn.try_into().unwrap()), &hn_blocks, node, bbt_map, file, b_crypt_method)?;
-                println!("    {}; {}", vec_u8_as_hex(&dn_bytes, true, " "), string_from_utf16_as_vec_u8(&dn_bytes));
-                let dn = &row[email_address_col.data_offset as usize..email_address_col.data_offset as usize + email_address_col.data_size as usize];
-                let dn_bytes = get_bytes_from_hid(u32::from_le_bytes(dn.try_into().unwrap()), &hn_blocks, node, bbt_map, file, b_crypt_method)?;
-                println!("    {}; {}", vec_u8_as_hex(&dn_bytes, true, " "), string_from_utf16_as_vec_u8(&dn_bytes));
-            }
-
-            bail!("TODO")
         } else {
             //ref https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/8e4ae05c-3c24-4103-b7e5-ffef6f244834
-            bail!("b_client_sig {:02X} not implemented", b_client_sig)
+            bail!("get_object_properties(): b_client_sig {:02X} not implemented", b_client_sig)
         }
-    } else if block_type==BlockType::XBlock {
-        let xblock_blocks = get_xblock_blocks(file, bbt_map, block_data, b_crypt_method)?;
-        let mut hn_blocks: Vec<HNBlock> = Vec::new();
-        for (iblock, xblock_block) in xblock_blocks.iter().enumerate() {
-            // let mut xblock_block = xblock_block;
-            hn_blocks.push(get_hn_block(&mut xblock_block.to_vec(), iblock as usize)?);
-        }
-        return Ok(process_heap_node(prop_ids, &hn_blocks, node, bbt_map, file, b_crypt_method)?);
     } else if block_type==BlockType::XXBlock {
         bail!("XXBlock not implemented")
     } else {
