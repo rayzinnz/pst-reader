@@ -27,8 +27,7 @@ fn main() -> Result<()> {
 
     println!("Hello, world!");
 
-    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\test.pst");
-    // let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2013.pst");
+    let pst_path = Path::new("./dev/test.pst");
 
     let mut bbt_map: HashMap<u64, BlockInfo> = HashMap::new();
     let mut nbt_map: HashMap<u32, Node> = HashMap::new();
