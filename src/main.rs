@@ -20,6 +20,8 @@ use structs::*;
 mod supporting_functions;
 use supporting_functions::*;
 
+use crate::enums::PropId::AttachmentHidden;
+
 fn main() -> Result<()> {
     helper_lib::setup_logger(LevelFilter::Debug, None, "", "html5ever");
     
@@ -157,11 +159,20 @@ Value	Friendly name	        Meaning
                 // println!("{:#?}", recipients);
                 // break
 
-                if subject=="FW: Daily Personnel Costs NZ".to_string() {
-                    // let attachments = get_file_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
+                // if subject=="FW: Daily Personnel Costs NZ".to_string() {
+                //     // let attachments = get_file_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
+                //     // println!("{:#?}", attachments);
+                //     let sub_msgs = get_message_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
+                //     println!("{:#?}", sub_msgs);
+
+                //     break
+                // }
+                if subject=="RE: Daily Personnel Costs NZ".to_string() {
+                    let attachments = get_file_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
                     // println!("{:#?}", attachments);
-                    let sub_msgs = get_message_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
-                    println!("{:#?}", sub_msgs);
+                    // for att in attachments {
+                    //     println!("  {}", att.);
+                    // }
 
                     break
                 }
@@ -252,17 +263,20 @@ fn get_message_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, B
     // println!("{:#?}", attachments_nodes);
     for (_, attachment_node) in attachments_nodes {
         //if there is a subnode 0x04, then this is a message attachment.
-        let is_message_attachment = attachment_node.sub_nodes.iter().any(|n| n.1.nid_type==NidType::NormalMessage);
-        if is_message_attachment {
-            let msg = get_message(attachment_node, file, bbt_map, b_crypt_method)?;
-            sub_msgs.push(msg);
+        match attachment_node.sub_nodes.iter().find(|n| n.1.nid_type==NidType::NormalMessage) {
+            Some((_, message_attachment)) => {
+                let msg = get_message(message_attachment, file, bbt_map, b_crypt_method)?;
+                sub_msgs.push(msg);
+            },
+            None => {},
         }
     }
 
     Ok(sub_msgs)
 }
 
-fn get_file_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<()> {
+fn get_file_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<Vec<Attachment>> {
+    let mut attachments: Vec<Attachment> = Vec::new();
     let attachments_nodes: Vec<(&u32, &Node)> = node.sub_nodes.iter().filter(|n| n.1.nid_type==NidType::Attachment).collect();
     // println!("{:#?}", attachments_nodes);
     for attachment_node in attachments_nodes {
@@ -270,48 +284,44 @@ fn get_file_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, Bloc
         //if there is a subnode 0x04, then this is a message attachment.
         let is_message_attachment = node.sub_nodes.iter().any(|n| n.1.nid_type==NidType::NormalMessage);
         if is_message_attachment {
-            println!("is_message_attachment")
+            //println!("is_message_attachment")
         } else {
             let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
             let mut block_data = get_block_data(file, &block_info, false)?;
             // println!("{}, {}", block_info.size, block_data.len());
-            println!("{}", vec_u8_as_hex(&block_data, true, " "));
+            // println!("{}", vec_u8_as_hex(&block_data, true, " "));
 
             let prop_ids: Option<Vec<PropId>> = None;
             // let prop_ids = Some(vec![PropId::DisplayName, PropId::SmtpAddress, PropId::RecipientType]);
             let property_entries = get_object_properties(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
-            // for propery_entry in property_entries {
+            // for (_, propery_entry) in &property_entries {
             //     println!("  {:?}: {}", propery_entry.property, propery_entry.value_string);
             // }
-            
-        //     let prop_ids = Some(vec![PropId::DisplayName, PropId::SmtpAddress, PropId::RecipientType]);
-        //     let table_rows = get_table(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
-        //     // println!("{:#?}", table_rows);
-        //     for irow in 0..table_rows.num_rows {
-        //         let column_entries = &table_rows.rows;
-        //         let display_name = get_column_entry_string(column_entries, PropId::DisplayName, irow)?;
-        //         let email_address = get_column_entry_string(column_entries, PropId::SmtpAddress, irow)?;
-        //         let recipient_type = get_column_entry_i32(column_entries, PropId::RecipientType, irow)?;
-        //         let recipient_type = RecipientType::try_from(recipient_type as u8).unwrap_or(RecipientType::To);
-        //         let recipient = Recipient {
-        //             display_name: display_name.clone(),
-        //             email_address: email_address.clone(),
-        //             recipient_type,
-        //         };
-        //         // println!("{}: {:#?}", irow, recipient);
-        //         recipients.push(recipient);
-        //     }
-
-        //     // let block_type = get_block_type(&block_data, b_crypt_method)?;
-        //     // println!("block_type: {block_type:?}");
-
+            let content_id = get_prop_string(&property_entries, &PropId::AttachContentId);
+            let mime_tag = get_prop_string(&property_entries, &PropId::AttachMimeTag);
+            let display_name = get_prop_string(&property_entries, &PropId::DisplayName);
+            let mut filename = get_prop_string(&property_entries, &PropId::AttachLongFilename);
+            if filename.is_empty() {
+                filename = get_prop_string(&property_entries, &PropId::AttachFilename);
+            }
+            if filename.is_empty() {
+                filename = display_name.clone();
+            }
+            let is_hidden = get_prop_bool(&property_entries, &PropId::AttachmentHidden, false);
+            let bytes = get_prop_binary(&property_entries, &PropId::AttachData);
+            let attachment = Attachment {
+                display_name,
+                filename,
+                content_id,
+                mime_tag,
+                is_hidden,
+                bytes,
+            };
+            attachments.push(attachment);
         }
-
-
-        break;
     }
 
-    Ok(())
+    Ok(attachments)
 }
 
 fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<Vec<Recipient>> {

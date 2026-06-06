@@ -134,6 +134,17 @@ impl Property {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+pub struct Attachment {
+    pub display_name: String,
+    pub filename: String,
+    pub content_id: String,
+    pub mime_tag: String,
+    pub is_hidden: bool,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
 pub struct Recipient {
     pub display_name: String,
     pub email_address: String,

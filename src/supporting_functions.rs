@@ -167,3 +167,27 @@ pub fn get_prop_datetime_op(property_entries: &HashMap<PropId, PropertyEntry>, p
 		None => None
 	}
 }
+
+pub fn get_prop_bool(property_entries: &HashMap<PropId, PropertyEntry>, prop_id: &PropId, default: bool) -> bool {
+	match property_entries.get(&prop_id) {
+		Some(property_entry) => {
+			match property_entry.property.prop_type {
+				PropType::Boolean => property_entry.value_bool.unwrap_or(default),
+				_ => default
+			}
+		},
+		None => default
+	}
+}
+
+pub fn get_prop_binary(property_entries: &HashMap<PropId, PropertyEntry>, prop_id: &PropId) -> Vec<u8> {
+	match property_entries.get(&prop_id) {
+		Some(property_entry) => {
+			match property_entry.property.prop_type {
+				PropType::Binary => property_entry.value_binary.as_ref().unwrap_or(&Vec::new()).to_vec(),
+				_ => Vec::new()
+			}
+		},
+		None => Vec::new()
+	}
+}
