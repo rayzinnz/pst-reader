@@ -9,7 +9,6 @@ use helper_lib::{datetime::windows_filetime_to_utc, strings::{string_from_utf16_
 use log::*;
 
 mod consts;
-use consts::*;
 
 mod enums;
 use enums::*;
@@ -19,8 +18,6 @@ use structs::*;
 
 mod supporting_functions;
 use supporting_functions::*;
-
-use crate::enums::PropId::AttachmentHidden;
 
 fn main() -> Result<()> {
     helper_lib::setup_logger(LevelFilter::Debug, None, "", "html5ever");
@@ -78,7 +75,7 @@ fn main() -> Result<()> {
     //     fAMapValid: get_u8(&file, 0xF8)?,
     // };
     let b_crypt_method = get_u8(&file, 0x0201)?;
-    let bid_next_b = get_u64(&file, 0x0204)?;
+    // let bid_next_b = get_u64(&file, 0x0204)?;
 
 /*
 Value	Friendly name	        Meaning
@@ -101,7 +98,7 @@ Value	Friendly name	        Meaning
     read_bt_entry(&mut file, brefnbt, &mut bbt_map, &mut nbt_map)?;
     // println!("{:#?}", nbt_map);
 
-    for (nid, node) in &nbt_map {
+    for (_, node) in &nbt_map {
         // println!("{}: {:?}", nid, node);
         // println!("{:02X}", node.nid_type);
         if node.data_bid > 0 {
@@ -152,8 +149,8 @@ Value	Friendly name	        Meaning
                 // println!("{:?}", subject.as_bytes());
                 // println!("{}", subject=="FW: Daily Personnel Costs NZ".to_string());
 
-                // let msg = get_message(node, &mut file, &bbt_map, &b_crypt_method)?;
-                // println!("{:#?}", msg);
+                let msg = get_message(node, &mut file, &bbt_map, &b_crypt_method)?;
+                println!("{:#?}", msg);
 
                 // let recipients = get_recipients(node, &mut file, &bbt_map, &b_crypt_method)?;
                 // println!("{:#?}", recipients);
@@ -167,26 +164,19 @@ Value	Friendly name	        Meaning
 
                 //     break
                 // }
-                if subject=="RE: Daily Personnel Costs NZ".to_string() {
-                    let attachments = get_file_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
-                    // println!("{:#?}", attachments);
-                    // for att in attachments {
-                    //     println!("  {}", att.);
-                    // }
+                // if subject=="RE: Daily Personnel Costs NZ".to_string() {
+                //     let attachments = get_file_attachments(node, &mut file, &bbt_map, &b_crypt_method)?;
+                //     // println!("{:#?}", attachments);
+                //     for att in attachments {
+                //         println!("  {}", att.filename);
+                //         let mut path = PathBuf::from("/home/ray/MEGA/Rays/temp");
+                //         path.push(att.filename);
+                //         let _ = std::fs::write(path, att.bytes)?;
+                //     }
 
-                    break
-                }
-                // break
-            } else if node.nid_type==NidType::AttachmentTable { //17 NID_TYPE_ATTACHMENT_TABLE
-                // println!("{}: {:?}", nid, node);
-            } else if node.nid_type==NidType::Attachment { //NID_TYPE_ATTACHMENT
-                // let property_entries = get_object_properties(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
-                // // println!("{:#?}", property_entries);
-                // for propery_entry in property_entries {
-                //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
+                //     break
                 // }
-            } else if node.nid_type==NidType::RecipientTable { //18 NID_TYPE_RECIPIENT_TABLE
-
+                // break
             }
         }
     }
@@ -200,7 +190,7 @@ fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b
     let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
     let mut block_data = get_block_data(file, &block_info, false)?;
     
-    let prop_ids: Option<Vec<PropId>> = None;
+    // let prop_ids: Option<Vec<PropId>> = None;
     let prop_ids: Option<Vec<PropId>> = Some(vec![
         PropId::Body,
         PropId::ClientSubmitTime,
@@ -252,6 +242,7 @@ fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b
         html: html,
         recipients: get_recipients(node, file, bbt_map, b_crypt_method)?,
         sub_msgs: get_message_attachments(node, file, bbt_map, b_crypt_method)?,
+        attachments: get_file_attachments(node, file, bbt_map, b_crypt_method)?,
     };
 
     Ok(msg)
@@ -404,17 +395,17 @@ fn get_table(prop_ids:&Option<Vec<PropId>>, block_data:&mut Vec<u8>, node:&Node,
         bail!("XXBlock not implemented")
     } else {
         // HNPAGEHDR https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/9c34ecf8-36bc-45a1-a2df-ee35c6dc840a
-        let page_map_loc = u16::from_le_bytes([block_data[0], block_data[1]]);
-        let page_map = &block_data[page_map_loc as usize..];
-        let num_chunks = u16::from_le_bytes([page_map[0], page_map[1]]);
-        for i in 0..num_chunks {
-            let offset_start = u16::from_le_bytes([page_map[i as usize*2+4], page_map[i as usize*2+5]]) as usize;
-            let offset_end = u16::from_le_bytes([page_map[i as usize*2+6], page_map[i as usize*2+7]]) as usize;
-            // println!("{}: {}-{}", i, offset_start, offset_end);
-            let chunk = &block_data[offset_start..offset_end];
-            // println!("    {}", vec_u8_as_hex(&chunk[0..4], true, " "));
-            // println!("{}", string_from_utf16_as_vec_u8(&chunk));
-        }
+        // let page_map_loc = u16::from_le_bytes([block_data[0], block_data[1]]);
+        // let page_map = &block_data[page_map_loc as usize..];
+        // let num_chunks = u16::from_le_bytes([page_map[0], page_map[1]]);
+        // for i in 0..num_chunks {
+        //     let offset_start = u16::from_le_bytes([page_map[i as usize*2+4], page_map[i as usize*2+5]]) as usize;
+        //     let offset_end = u16::from_le_bytes([page_map[i as usize*2+6], page_map[i as usize*2+7]]) as usize;
+        //     // println!("{}: {}-{}", i, offset_start, offset_end);
+        //     let chunk = &block_data[offset_start..offset_end];
+        //     // println!("    {}", vec_u8_as_hex(&chunk[0..4], true, " "));
+        //     // println!("{}", string_from_utf16_as_vec_u8(&chunk));
+        // }
         // println!("{}", vec_u8_as_hex(&block_data, true, " "));
         // println!("{}", string_from_utf16_as_vec_u8(&block_data[3..]));
         // println!("{}", block_data.len());
@@ -437,8 +428,8 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
     }
     let c_cols = tcinfo[1]; //Column count.
     // let rgib = &tcinfo[2..10];
-    let rgib_0_4b = u16::from_le_bytes(tcinfo[2..4].try_into().unwrap()); //TCI_4b Ending offset of 8- and 4-byte data value group.
-    let rgib_1_2b = u16::from_le_bytes(tcinfo[4..6].try_into().unwrap()); //TCI_2b Ending offset of 2-byte data value group.
+    // let rgib_0_4b = u16::from_le_bytes(tcinfo[2..4].try_into().unwrap()); //TCI_4b Ending offset of 8- and 4-byte data value group.
+    // let rgib_1_2b = u16::from_le_bytes(tcinfo[4..6].try_into().unwrap()); //TCI_2b Ending offset of 2-byte data value group.
     let rgib_2_1b = u16::from_le_bytes(tcinfo[6..8].try_into().unwrap()); //TCI_1b Ending offset of 1-byte data value group.
     let rgib_3_bm = u16::from_le_bytes(tcinfo[8..10].try_into().unwrap()); //TCI_bm Ending offset of the Cell Existence Block.
     let hid_row_index = Hid::new(u32::from_le_bytes(tcinfo[10..14].try_into().unwrap()));
@@ -522,11 +513,11 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
     let tcrowid = get_bytes_from_hid(hid.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
     // println!("tcrowid: {}", vec_u8_as_hex(&tcrowid, true, " "));
     let num_rows = tcrowid.len() / 8;
-    for irow in 0..num_rows {
-        let dw_row_id = u32::from_le_bytes(tcrowid[irow*8+0..irow*8+4].try_into().unwrap());
-        let dw_row_index = u32::from_le_bytes(tcrowid[irow*8+4..irow*8+8].try_into().unwrap());
-        // println!("  tcrowid: {}: {}, {}", irow, dw_row_id, dw_row_index);
-    }
+    // for irow in 0..num_rows {
+    //     let dw_row_id = u32::from_le_bytes(tcrowid[irow*8+0..irow*8+4].try_into().unwrap());
+    //     let dw_row_index = u32::from_le_bytes(tcrowid[irow*8+4..irow*8+8].try_into().unwrap());
+    //     // println!("  tcrowid: {}: {}, {}", irow, dw_row_id, dw_row_index);
+    // }
 
     //Row Matrix //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/7f5ec68f-d4fd-404f-95c3-fe3495a034ec
     let rows = get_bytes_from_hid(hnid_rows.hid, &hn_blocks, node, bbt_map, file, b_crypt_method)?;
@@ -541,8 +532,8 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
         bail!("TODO, handle when num_rows > rows_per_block: {} > {}", num_rows, rows_per_block)
     }
     for irow in 0..num_rows {
-        let iblock = irow / rows_per_block;
-        let irowinblock = irow % rows_per_block;
+        // let iblock = irow / rows_per_block;
+        // let irowinblock = irow % rows_per_block;
         let row = &rows[irow*rgib_3_bm as usize..irow*rgib_3_bm as usize+rgib_3_bm as usize];
         // println!("row: {}:\n{}", irow, vec_u8_as_hex(&row, true, " "));
         let rg_ceb = &row[rgib_2_1b as usize..rgib_3_bm as usize];
@@ -628,7 +619,7 @@ fn get_hn_blocks(mut block_data:&mut Vec<u8>, b_crypt_method:&u8, file: &mut Fil
     }
 }
 
-fn get_object_properties(prop_ids:&Option<Vec<PropId>>, block_data:&mut Vec<u8>, node:&Node, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<(HashMap<PropId, PropertyEntry>)> {
+fn get_object_properties(prop_ids:&Option<Vec<PropId>>, block_data:&mut Vec<u8>, node:&Node, b_crypt_method:&u8, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>) -> Result<HashMap<PropId, PropertyEntry>> {
     // Block data types:
     // Heap-on-Node (HN) (block_data[2]==0xEC)
     // XBLOCK (block_data[0]==0x01)
@@ -660,17 +651,17 @@ Data Block
         bail!("XXBlock not implemented")
     } else {
         // HNPAGEHDR https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/9c34ecf8-36bc-45a1-a2df-ee35c6dc840a
-        let page_map_loc = u16::from_le_bytes([block_data[0], block_data[1]]);
-        let page_map = &block_data[page_map_loc as usize..];
-        let num_chunks = u16::from_le_bytes([page_map[0], page_map[1]]);
-        for i in 0..num_chunks {
-            let offset_start = u16::from_le_bytes([page_map[i as usize*2+4], page_map[i as usize*2+5]]) as usize;
-            let offset_end = u16::from_le_bytes([page_map[i as usize*2+6], page_map[i as usize*2+7]]) as usize;
-            // println!("{}: {}-{}", i, offset_start, offset_end);
-            let chunk = &block_data[offset_start..offset_end];
-            // println!("    {}", vec_u8_as_hex(&chunk[0..4], true, " "));
-            // println!("{}", string_from_utf16_as_vec_u8(&chunk));
-        }
+        // let page_map_loc = u16::from_le_bytes([block_data[0], block_data[1]]);
+        // let page_map = &block_data[page_map_loc as usize..];
+        // let num_chunks = u16::from_le_bytes([page_map[0], page_map[1]]);
+        // for i in 0..num_chunks {
+        //     let offset_start = u16::from_le_bytes([page_map[i as usize*2+4], page_map[i as usize*2+5]]) as usize;
+        //     let offset_end = u16::from_le_bytes([page_map[i as usize*2+6], page_map[i as usize*2+7]]) as usize;
+        //     // println!("{}: {}-{}", i, offset_start, offset_end);
+        //     let chunk = &block_data[offset_start..offset_end];
+        //     // println!("    {}", vec_u8_as_hex(&chunk[0..4], true, " "));
+        //     // println!("{}", string_from_utf16_as_vec_u8(&chunk));
+        // }
         // println!("{}", vec_u8_as_hex(&block_data, true, " "));
         // println!("{}", string_from_utf16_as_vec_u8(&block_data[3..]));
         // println!("{}", block_data.len());
@@ -791,7 +782,7 @@ fn get_hn_block(block_data:&mut Vec<u8>, index:usize) -> Result<HNBlock> {
         // Property value (string)
 
         //the allocation has offset entries like this:
-        for i in (0..offsets.len()-1) {
+        for i in 0..offsets.len()-1 {
             let start = offsets[i];
             let end   = offsets[i + 1];
 
@@ -820,7 +811,7 @@ fn get_hn_block(block_data:&mut Vec<u8>, index:usize) -> Result<HNBlock> {
 }
 
 // fn process_heap_node(block_data:&mut Vec<u8>) -> Result<()> {
-fn process_heap_node(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, node:&Node, bbt_map: &HashMap<u64, BlockInfo>, file: &mut File, b_crypt_method:&u8) -> Result<(HashMap<PropId, PropertyEntry>)> {
+fn process_heap_node(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, node:&Node, bbt_map: &HashMap<u64, BlockInfo>, file: &mut File, b_crypt_method:&u8) -> Result<HashMap<PropId, PropertyEntry>> {
     // first hn provides property entries
     // HNHDR
 
@@ -835,7 +826,7 @@ fn process_heap_node(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
     if !vec![2,4,8,16].contains(&cb_key) {
         bail!("bth_header, cb_key={}, Size of the BTree Key value, in bytes. This value MUST be set to 2, 4, 8, or 16.", cb_key)
     }
-    let cb_ent = bth_header[2]; //Size of the data value, in bytes. This MUST be greater than zero and less than or equal to 32.
+    // let cb_ent = bth_header[2]; //Size of the data value, in bytes. This MUST be greater than zero and less than or equal to 32.
     let bldx_levels = bth_header[3]; //Index depth. This number indicates how many levels of intermediate indices exist in the BTH. Note that this number is zero-based, meaning that a value of zero actually means that the BTH has one level of indices. If this value is greater than zero, then its value indicates how many intermediate index levels are present.
     let hid = Hid::new(u32::from_le_bytes(bth_header[4..8].try_into().unwrap()));
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/85b9e985-ea53-447f-b70c-eb82bfbdcbc9

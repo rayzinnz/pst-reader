@@ -164,7 +164,7 @@ pub struct Message {
 	pub html: String,
 	pub recipients: Vec<Recipient>,
 	pub sub_msgs: Vec<Message>,
-	// pub attachments: Vec<MsgAttachment>,
+	pub attachments: Vec<Attachment>,
 }
 
 
