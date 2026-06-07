@@ -1,8 +1,26 @@
-﻿use std::collections::HashMap;
+﻿use std::{collections::HashMap, fs::File, path::Path};
 
+use anyhow::{Result};
 use chrono::{DateTime, Utc};
 
-use crate::{enums::{NidType, PropId, PropType, RecipientType}};
+use crate::{enums::{NidType, PropId, PropType, RecipientType}, get_message, open_pst_file};
+
+#[allow(dead_code)]
+pub struct PstFile {
+    pub file: File,
+    pub bbt_map: HashMap<u64, BlockInfo>,
+    pub nbt_map: HashMap<u32, Node>,
+    pub b_crypt_method: u8,
+}
+impl PstFile {
+    pub fn new(pst_path: &Path) -> Result<Self> {
+        open_pst_file(pst_path)
+    }
+
+    pub fn get_message(mut self, node: &Node) -> Result<Message> {
+        get_message(node, &mut self.file, &self.bbt_map, &self.b_crypt_method)
+    }
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
