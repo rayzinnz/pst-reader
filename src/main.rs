@@ -33,8 +33,8 @@ fn main() -> Result<()> {
         // println!("{}: {:?}", nid, node);
         // println!("{:02X}", node.nid_type);
         if node.data_bid > 0 {
-            let block_info = pst_file.bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
-            let mut block_data = get_block_data(&mut file, &block_info, false)?;
+            // let block_info = pst_file.bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
+            // let mut block_data = get_block_data(&mut file, &block_info, false)?;
             // println!("{}: {:?}", nid, node);
             // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/18d7644e-cb33-4e11-95c0-34d8a84fbff6
             if node.nid_type==NidType::NormalFolder { //NID_TYPE_NORMAL_FOLDER
@@ -44,7 +44,7 @@ fn main() -> Result<()> {
                 //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
                 // }
             } else if node.nid_type==NidType::NormalMessage { // NID_TYPE_NORMAL_MESSAGE
-                let msg = pst_file.get_message(node)?;
+                let msg = &pst_file.get_message(node)?;
                 // println!();
                 // println!("nid#{}: {:?}, {:?}", nid, node, block_info);
                 //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/a9c1981d-d1ea-457c-b39e-dc7fb0eb95d4
@@ -81,8 +81,8 @@ fn main() -> Result<()> {
                 // println!("{:?}", subject.as_bytes());
                 // println!("{}", subject=="FW: Daily Personnel Costs NZ".to_string());
 
-                let msg = get_message(node, &mut file, &bbt_map, &b_crypt_method)?;
-                println!("{:#?}", msg);
+                // let msg = get_message(node, &mut file, &bbt_map, &b_crypt_method)?;
+                // println!("{:#?}", msg);
 
                 // let recipients = get_recipients(node, &mut file, &bbt_map, &b_crypt_method)?;
                 // println!("{:#?}", recipients);
