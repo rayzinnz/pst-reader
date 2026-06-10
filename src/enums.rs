@@ -1,5 +1,6 @@
 ﻿use num_enum::TryFromPrimitive;
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub enum BlockType {
     Raw,
@@ -8,6 +9,7 @@ pub enum BlockType {
     XXBlock,
 }
 
+#[allow(dead_code)]
 #[repr(u8)]
 #[derive(Debug, PartialEq, TryFromPrimitive)]
 pub enum RecipientType {
@@ -17,8 +19,9 @@ pub enum RecipientType {
 }
 
 // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/18d7644e-cb33-4e11-95c0-34d8a84fbff6
+#[allow(dead_code)]
 #[repr(u8)]
-#[derive(Debug, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Debug, PartialEq, TryFromPrimitive)]
 pub enum NidType {
 	Hid = 0x00, // Heap node
 	Internal = 0x01, // Internal node (section 2.4.1)

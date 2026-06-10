@@ -3,7 +3,7 @@
 use anyhow::{Result};
 use chrono::{DateTime, Utc};
 
-use crate::{enums::{NidType, PropId, PropType, RecipientType}, get_message, open_pst_file};
+use crate::{enums::{NidType, PropId, PropType, RecipientType}, get_message, get_message_header, open_pst_file};
 
 #[allow(dead_code)]
 pub struct PstFile {
@@ -17,8 +17,23 @@ impl PstFile {
         open_pst_file(pst_path)
     }
 
-    pub fn get_message(mut self, node: &Node) -> Result<Message> {
+    pub fn get_message(&mut self, node: &Node) -> Result<Message> {
         get_message(node, &mut self.file, &self.bbt_map, &self.b_crypt_method)
+    }
+
+    pub fn get_message_header(&mut self, node: &Node) -> Result<MessageHeader> {
+        get_message_header(node, &mut self.file, &self.bbt_map, &self.b_crypt_method)
+    }
+
+    pub fn get_all_message_headers(&mut self) -> Result<Vec<MessageHeader>> {
+        let mut msg_headers: Vec<MessageHeader> = Vec::new();
+        for (_, node) in self.nbt_map.clone() {
+            if node.data_bid > 0 && node.nid_type==NidType::NormalMessage {
+                let msg = get_message_header(&node, &mut self.file, &self.bbt_map, &self.b_crypt_method)?;
+                msg_headers.push(msg);
+            }
+        }
+        Ok(msg_headers)
     }
 }
 
@@ -36,7 +51,7 @@ pub struct BlockInfo {
     pub size: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct Node {
     pub nid_type: NidType,
@@ -185,6 +200,13 @@ pub struct Message {
 	pub attachments: Vec<Attachment>,
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct MessageHeader {
+    pub node: Node,
+	pub received_time: DateTime<Utc>,
+	pub subject: String,
+}
 
 #[cfg(test)]
 mod tests {
