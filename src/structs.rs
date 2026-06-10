@@ -54,6 +54,7 @@ pub struct BlockInfo {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct Node {
+    pub nid: u32,
     pub nid_type: NidType,
     pub data_bid: u64,
     pub sub_bid: u64,

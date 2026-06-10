@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Result};
 use log::*;
 
-use pst_reader::{structs::PstFile};
+use pst_reader::{enums::NidType, structs::PstFile};
 
 // mod consts;
 
@@ -30,10 +30,15 @@ fn main() -> Result<()> {
 
     let mut pst_file = PstFile::new(pst_path)?;
 
-    let msgs = pst_file.get_all_message_headers()?;
-    // println!("{:#?}", msgs);
-    for (imsg, msg) in msgs.iter().enumerate() {
-        println!("{}: {}", imsg, msg.subject)
+    let msghs = pst_file.get_all_message_headers()?;
+    // // println!("{:#?}", msgs);
+    for (imsg, msgh) in msghs.iter().enumerate() {
+        println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        // if msgh.subject=="RE: March reports " {
+        //     println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        //     let msg = &pst_file.get_message(&msgh.node)?;
+        //     //20MB XXBlock
+        // }
     }
 
 
@@ -52,10 +57,10 @@ fn main() -> Result<()> {
     //             //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
     //             // }
     //         } else if node.nid_type==NidType::NormalMessage { // NID_TYPE_NORMAL_MESSAGE
-    //             // let msg = &pst_file.get_message(&node)?;
-    //             // println!("{:#?}", msg.subject);
-    //             let msg = &pst_file.get_message_header(&node)?;
-    //             println!("{:?}", msg);
+    //             let msg = &pst_file.get_message(&node)?;
+    //             println!("{:#?}", msg.subject);
+    //             // let msg = &pst_file.get_message_header(&node)?;
+    //             // println!("{:?}", msg);
     //             // println!();
     //             // println!("nid#{}: {:?}, {:?}", nid, node, block_info);
     //             //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/a9c1981d-d1ea-457c-b39e-dc7fb0eb95d4

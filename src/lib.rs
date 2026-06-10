@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::{Read, Seek, SeekFrom}, path::Path};
+use std::{collections::HashMap, fs::{self, File}, io::{Read, Seek, SeekFrom}, path::Path};
 
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
@@ -155,7 +155,7 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
     // println!("{}", String::from_utf8_lossy(&property_entries[&PropId::Html].value_binary.as_ref().unwrap()));
 
     let subject = get_prop_string(&property_entries, &PropId::Subject);
-    println!("subject: '{subject}'");
+    // println!("subject: '{subject}'");
     let mut conversation = get_prop_string(&property_entries, &PropId::ConversationTopic);
     if conversation.is_empty() {
         conversation = get_prop_string(&property_entries, &PropId::NormalizedSubject);
@@ -647,9 +647,9 @@ fn get_xblock_blocks(file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, block_d
     let mut xblock_blocks:Vec<Vec<u8>> = Vec::new();
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5b7a6935-e83d-4917-9f62-6ce3707f09e0
     let b_type = block_data[0]; //Block type; MUST be set to 0x01 to indicate an XBLOCK or XXBLOCK.
-    if b_type!=1 { bail!("xblock b_type MUST be set to 0x01") }
+    if b_type!=1 { bail!("xblock b_type MUST be set to 0x01, it is {:02X}", b_type) }
     let c_level = block_data[1]; //MUST be set to 0x01 to indicate an XBLOCK (0x02 for XXBLOCK)
-    if c_level!=1 { bail!("xblock c_level MUST be set to 0x01") }
+    if c_level!=1 && c_level!=2 { bail!("xblock c_level MUST be set to 0x01, it is {:02X}", c_level) }
     let c_ent = u16::from_le_bytes([block_data[2], block_data[3]]); //The count of BID entries in the XBLOCK.
     //let lcb_total = u32::from_le_bytes(block_data[4..8].try_into().unwrap()); //Total count of bytes of all the external data stored in the data blocks referenced by XBLOCK
     let end_chunk_loc = 8 + c_ent as usize * 8;
@@ -674,7 +674,7 @@ fn get_xblock_blocks(file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, block_d
         let block_info = bbt_map.get(&bid).expect("There should always be a bbt entry");
         // println!("    {block_info:?}");
         let mut block_data = get_block_data(file, &block_info, false)?;
-        if *b_crypt_method == 1 {
+        if *b_crypt_method == 1 && c_level==1 { //do not decrypt XXBlock XBlocks (c_level==2)
             //NDB_CRYPT_PERMUTE
             //https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5faf4800-645d-49d1-9457-2ac40eb467bd
             decode_permute(&mut block_data);
@@ -1035,6 +1035,18 @@ fn get_sub_node_bytes(node:&Node, sub_nid:Hid, mut file: &mut File, bbt_map: &Ha
         value.append(&mut block_data);
         // println!("{}", vec_u8_as_hex(&block_data, true, " "));
         // println!("{}", string_from_utf16_as_vec_u8(&block_data));
+    } else if block_type==BlockType::XXBlock {
+        // println!("XXBlock data: ({}) {}", block_data.len(), vec_u8_as_hex(&block_data, true, " "));
+        let xxblock_xblocks = get_xblock_blocks(file, bbt_map, &block_data, b_crypt_method)?;
+        for xxblock_xblock in xxblock_xblocks {
+            // println!("{}", vec_u8_as_hex(&xxblock_xblock, true, " "));
+            let xblock_blocks = get_xblock_blocks(file, bbt_map, &xxblock_xblock, b_crypt_method)?;
+            for xblock_block in xblock_blocks {
+                value.extend_from_slice(&xblock_block);
+            }
+        }
+        // fs::write(r"C:\Users\hrag\temp\temp.zip", value)?;
+        // bail!("sub_node blocks, unexpected block type: {:?}", block_type)
     } else {
         bail!("sub_node blocks, unexpected block type: {:?}", block_type)
     }
@@ -1130,7 +1142,7 @@ Value	Friendly name	Meaning	                    wSig value
                 // println!("{}, {}, {}, {}, {:02X}", nid, bid_data, bid_sub, nid_parent, nid_type);
 
                 let sub_nodes = get_sub_nodes(file, bbt_map, nid, bid_sub)?;
-                let node: Node = Node { nid_type: NidType::try_from(nid_type).unwrap_or(NidType::Unknown), data_bid: bid_data, sub_bid: bid_sub, parent: nid_parent, sub_nodes };
+                let node: Node = Node { nid, nid_type: NidType::try_from(nid_type).unwrap_or(NidType::Unknown), data_bid: bid_data, sub_bid: bid_sub, parent: nid_parent, sub_nodes };
                 // println!("node: {:?}", node);
 
                 nbt_map.insert(nid, node);
@@ -1185,7 +1197,7 @@ fn get_sub_nodes(file: &mut File, bbt_map: &mut HashMap<u64, BlockInfo>, nid_par
             let sub_nid_parent = &nid_parent;
             let sub_nid_type = (sub_nid & 0x1F) as u8;
             let sub_sub_nodes = get_sub_nodes(file, bbt_map, sub_nid, sub_bid_sub)?;
-            let sub_node:Node = Node { nid_type: NidType::try_from(sub_nid_type).unwrap_or(NidType::Unknown), data_bid: sub_bid_data, sub_bid: sub_bid_sub, parent: *sub_nid_parent, sub_nodes: sub_sub_nodes };
+            let sub_node:Node = Node { nid: sub_nid, nid_type: NidType::try_from(sub_nid_type).unwrap_or(NidType::Unknown), data_bid: sub_bid_data, sub_bid: sub_bid_sub, parent: *sub_nid_parent, sub_nodes: sub_sub_nodes };
             // println!("sub_node: {:?}", sub_node);
             sub_nodes.insert(sub_nid, sub_node);
         }
