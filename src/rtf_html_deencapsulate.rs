@@ -95,15 +95,15 @@ pub fn rtf_to_html_outlook(rtf: &str) -> Result<String> {
 
     // Check for \fromhtml marker (MS-OXRTFEX 2.2.3.1)
     // The marker should appear in the header
-    let header_end = rtf.find("{\\*\\htmltag").unwrap_or(rtf.len().min(4096));
-    let header = &rtf[..header_end];
-    if !header.contains("\\fromhtml") {
+    // let header_end = rtf.find("{\\*\\htmltag").unwrap_or(rtf.len().min(4096));
+    // let header = &rtf[..header_end];
+    if !rtf.contains("\\fromhtml") {
         // Not an Outlook HTML-encapsulated RTF
         bail!("Not a '\\fromhtml' MS-OXRTFEX rtf document")
     }
 
     // Determine codepage from \ansicpgN control word
-    let codepage = parse_ansicpg(header).unwrap_or(1252);
+    let codepage = parse_ansicpg(rtf).unwrap_or(1252);
     let encoding = encoding_from_codepage(codepage).unwrap_or(WINDOWS_1252);
 
     // Parse the RTF stream

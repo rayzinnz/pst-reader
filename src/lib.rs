@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::{self, File}, io::{Read, Seek, SeekFrom}, path::Path};
+use std::{collections::HashMap, fs::{File}, io::{Read, Seek, SeekFrom}, path::Path};
 
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
@@ -155,7 +155,7 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
     // println!("{}", String::from_utf8_lossy(&property_entries[&PropId::Html].value_binary.as_ref().unwrap()));
 
     let subject = get_prop_string(&property_entries, &PropId::Subject);
-    // println!("subject: '{subject}'");
+    println!("subject: '{subject}'");
     let mut conversation = get_prop_string(&property_entries, &PropId::ConversationTopic);
     if conversation.is_empty() {
         conversation = get_prop_string(&property_entries, &PropId::NormalizedSubject);
@@ -168,8 +168,10 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
 
     if html.is_empty() && property_entries.contains_key(&PropId::RtfCompressed) {
         let rtf_compressed = get_prop_binary(&property_entries, &PropId::RtfCompressed);
-        let rtf = decompress_rtf(&rtf_compressed)?;
-        html = rtf_html_deencapsulate::rtf_to_html_outlook(&rtf).unwrap_or_default();
+        if !rtf_compressed.is_empty() {
+            let rtf = decompress_rtf(&rtf_compressed)?;
+            html = rtf_html_deencapsulate::rtf_to_html_outlook(&rtf).unwrap_or_default();
+        }
     }
     let received_time = match get_prop_datetime_op(&property_entries, &PropId::MessageDeliveryTime) {
         Some(dt) => dt,
@@ -222,47 +224,53 @@ pub fn get_file_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, 
         if is_message_attachment {
             //println!("is_message_attachment")
         } else {
-            let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
-            let mut block_data = get_block_data(file, &block_info, false)?;
-            // println!("{}, {}", block_info.size, block_data.len());
-            // println!("{}", vec_u8_as_hex(&block_data, true, " "));
+            match bbt_map.get(&node.data_bid) { //.expect("There should always be a bbt entry");
+                Some(block_info) => {
+                    let mut block_data = get_block_data(file, &block_info, false)?;
+                    // println!("{}, {}", block_info.size, block_data.len());
+                    // println!("{}", vec_u8_as_hex(&block_data, true, " "));
 
-            // let prop_ids: Option<Vec<PropId>> = None;
-            let prop_ids = Some(vec![
-                PropId::AttachContentId,
-                PropId::AttachData,
-                PropId::AttachFilename,
-                PropId::AttachLongFilename,
-                PropId::AttachmentHidden,
-                PropId::AttachMimeTag,
-                PropId::DisplayName,
-                ]);
-            // println!("props for get_file_attachments():\n{:#?}", prop_ids);
-            let property_entries = get_object_properties(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
-            // for (_, propery_entry) in &property_entries {
-            //     println!("  {:?}: {}", propery_entry.property, propery_entry.value_string);
-            // }
-            let content_id = get_prop_string(&property_entries, &PropId::AttachContentId);
-            let mime_tag = get_prop_string(&property_entries, &PropId::AttachMimeTag);
-            let display_name = get_prop_string(&property_entries, &PropId::DisplayName);
-            let mut filename = get_prop_string(&property_entries, &PropId::AttachLongFilename);
-            if filename.is_empty() {
-                filename = get_prop_string(&property_entries, &PropId::AttachFilename);
+                    // let prop_ids: Option<Vec<PropId>> = None;
+                    let prop_ids = Some(vec![
+                        PropId::AttachContentId,
+                        PropId::AttachData,
+                        PropId::AttachFilename,
+                        PropId::AttachLongFilename,
+                        PropId::AttachmentHidden,
+                        PropId::AttachMimeTag,
+                        PropId::DisplayName,
+                        ]);
+                    // println!("props for get_file_attachments():\n{:#?}", prop_ids);
+                    let property_entries = get_object_properties(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
+                    // for (_, propery_entry) in &property_entries {
+                    //     println!("  {:?}: {}", propery_entry.property, propery_entry.value_string);
+                    // }
+                    let content_id = get_prop_string(&property_entries, &PropId::AttachContentId);
+                    let mime_tag = get_prop_string(&property_entries, &PropId::AttachMimeTag);
+                    let display_name = get_prop_string(&property_entries, &PropId::DisplayName);
+                    let mut filename = get_prop_string(&property_entries, &PropId::AttachLongFilename);
+                    if filename.is_empty() {
+                        filename = get_prop_string(&property_entries, &PropId::AttachFilename);
+                    }
+                    if filename.is_empty() {
+                        filename = display_name.clone();
+                    }
+                    let is_hidden = get_prop_bool(&property_entries, &PropId::AttachmentHidden, false);
+                    let bytes = get_prop_binary(&property_entries, &PropId::AttachData);
+                    let attachment = Attachment {
+                        display_name,
+                        filename,
+                        content_id,
+                        mime_tag,
+                        is_hidden,
+                        bytes,
+                    };
+                    attachments.push(attachment);                },
+                None => {
+                    eprintln!("get_file_attachments() #{}: There should always be a bbt entry", attachment_node.0)
+                }
             }
-            if filename.is_empty() {
-                filename = display_name.clone();
-            }
-            let is_hidden = get_prop_bool(&property_entries, &PropId::AttachmentHidden, false);
-            let bytes = get_prop_binary(&property_entries, &PropId::AttachData);
-            let attachment = Attachment {
-                display_name,
-                filename,
-                content_id,
-                mime_tag,
-                is_hidden,
-                bytes,
-            };
-            attachments.push(attachment);
+
         }
     }
 
@@ -334,7 +342,10 @@ fn get_block_type(block_data:&Vec<u8>, b_crypt_method:&u8) -> Result<BlockType> 
         } else if block_data[1]==0x02 {
             return Ok(BlockType::XXBlock);
         } else {
-            bail!("Unexpected XBLOCK type (should be 1 (XBLOCK) or 2 (XXBLOCK))")
+            return Ok(BlockType::Raw);
+            // let mut block_data = block_data.clone();
+            // decode_permute(&mut block_data);
+            // bail!("Unexpected XBLOCK type (should be 1 (XBLOCK) or 2 (XXBLOCK))\n{}", vec_u8_as_hex(&block_data, true, " "))
         }
     } else {
         if *b_crypt_method == 1 && block_data[2]==0xFF {
@@ -497,13 +508,13 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
     // println!("rows: {} / {} = {}", rows.len(), rgib_3_bm, rows.len() / rgib_3_bm as usize);
     // let display_name_col = tccols.iter().find(|c| c.property.prop_id==PropId::DisplayName).unwrap();
     // let email_address_col = tccols.iter().find(|c| c.property.prop_id==PropId::SmtpAddress).unwrap();
-    let sizeof_block = 8192;
-    let sizeof_blocktrailer = 16;
-    let block_datasize = sizeof_block - sizeof_blocktrailer;
-    let rows_per_block = block_datasize / rgib_3_bm as usize;
-    if rows_per_block < num_rows {
-        bail!("TODO, handle when num_rows > rows_per_block: {} > {}", num_rows, rows_per_block)
-    }
+    // let sizeof_block = 8192;
+    // let sizeof_blocktrailer = 16;
+    // let block_datasize = sizeof_block - sizeof_blocktrailer;
+    // let rows_per_block = block_datasize / rgib_3_bm as usize;
+    // if rows_per_block < num_rows {
+    //     bail!("TODO, handle when num_rows > rows_per_block: {} > {}", num_rows, rows_per_block)
+    // }
     for irow in 0..num_rows {
         // let iblock = irow / rows_per_block;
         // let irowinblock = irow % rows_per_block;
@@ -812,7 +823,7 @@ fn process_heap_node(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
         bail!("hid.hid_type MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.")
     }
     if hid.hid_index==0 {
-        bail!("hid.hid_index is a 1-based index, MUST NOT be zero.")
+        bail!("process_heap_node(): hid.hid_index is a 1-based index, MUST NOT be zero.\n{:?}\n{}", hid, vec_u8_as_hex(bth_header, true, " "))
     }
     // for (i, bth_chunk) in hn_blocks[0].bth_chunks.iter().enumerate() {
     //     println!("  {}: {}", i, vec_u8_as_hex(bth_chunk, true, " "));
@@ -984,10 +995,10 @@ fn get_bytes_from_hid(hid:u32, hn_blocks: &Vec<HNBlock>, node:&Node, bbt_map: &H
     // println!("    property_entry: {:04X}, {:04X}, {:?}", w_prop_id, w_prop_type, hid);
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/7ac490ce-31af-4a75-97df-eb9d07a003fd
     //    The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID.
-    if hid.hid_type==0 {
+    if hid.hid_type==0 && hid.hid_index!=0 {
         //HNID is a HID (<= 3580 bytes)
         if hid.hid_type!=0 { bail!("hid.hid_type MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.") }
-        if hid.hid_index==0 { bail!("hid.hid_index is a 1-based index, MUST NOT be zero.") }
+        if hid.hid_index==0 { bail!("get_bytes_from_hid(): hid.hid_index is a 1-based index, MUST NOT be zero.\n{:?}", hid) }
         let value = &hn_blocks[hid.hid_block_index as usize].bth_chunks[hid.hid_index as usize];
         return Ok(value.to_vec());
     } else {
@@ -1010,6 +1021,10 @@ fn get_sub_node_bytes(node:&Node, sub_nid:Hid, mut file: &mut File, bbt_map: &Ha
     // println!("{:#?}", nbt_map);
     // println!("sub_nid: {sub_nid}, sub_nid_type: {sub_nid_type:02X}");
     // println!("{:?}", node);
+    if !node.sub_nodes.contains_key(&sub_nid.hid) {
+        eprintln!("get_sub_node_bytes(): Missing sub_nodes entry");
+        return Ok(value);
+    }
     let sub_node = &node.sub_nodes.get(&sub_nid.hid).expect("Missing sub_nodes entry");
     // println!("{:?}", sub_node);
     // let node = nbt_map.get(&(hid.hid_index as u32)).expect("Missing nbt_map entry");

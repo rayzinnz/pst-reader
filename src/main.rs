@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::{Result};
 use log::*;
 
+#[allow(unused_imports)]
 use pst_reader::{enums::NidType, structs::PstFile};
 
 // mod consts;
@@ -25,20 +26,21 @@ fn main() -> Result<()> {
 
     println!("Hello, world!");
 
-    // let pst_path = Path::new("./dev/test.pst");
-    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2025.pst");
+    // C:\program files/Microsoft Office\root\Office16\SCANPST.EXE
+    let pst_path = Path::new("./dev/test.pst");
+    // let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2020.pst");
 
     let mut pst_file = PstFile::new(pst_path)?;
 
     let msghs = pst_file.get_all_message_headers()?;
     // // println!("{:#?}", msgs);
     for (imsg, msgh) in msghs.iter().enumerate() {
-        println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
-        // if msgh.subject=="RE: March reports " {
-        //     println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
-        //     let msg = &pst_file.get_message(&msgh.node)?;
-        //     //20MB XXBlock
-        // }
+        // println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        // let msg = &pst_file.get_message(&msgh.node)?;
+        if msgh.subject=="RE: Labware files storage requirements" {
+            println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+            let msg = &pst_file.get_message(&msgh.node)?;
+        }
     }
 
 
