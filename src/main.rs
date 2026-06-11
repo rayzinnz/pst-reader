@@ -27,19 +27,25 @@ fn main() -> Result<()> {
     println!("Hello, world!");
 
     // C:\program files/Microsoft Office\root\Office16\SCANPST.EXE
-    let pst_path = Path::new("./dev/test.pst");
-    // let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2020.pst");
+    // let pst_path = Path::new("./dev/test.pst");
+    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2019.pst");
 
     let mut pst_file = PstFile::new(pst_path)?;
+    // println!("{}", pst_file.bbt_map.len());
+    // println!("{:#?}", pst_file.bbt_map);
+    // println!("{:#?}", pst_file.nbt_map);
 
     let msghs = pst_file.get_all_message_headers()?;
     // // println!("{:#?}", msgs);
     for (imsg, msgh) in msghs.iter().enumerate() {
         // println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
         // let msg = &pst_file.get_message(&msgh.node)?;
-        if msgh.subject=="RE: Labware files storage requirements" {
-            println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        // println!("folder_name: {}", msg.folder_name);
+        if msgh.subject.contains("Genereal") {
+            println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
             let msg = &pst_file.get_message(&msgh.node)?;
+            println!("atts: {}", msg.attachments.len());
+            println!("folder_name: {}", msg.folder_name);
         }
     }
 
@@ -53,14 +59,16 @@ fn main() -> Result<()> {
     //         // println!("{}: {:?}", nid, node);
     //         // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/18d7644e-cb33-4e11-95c0-34d8a84fbff6
     //         if node.nid_type==NidType::NormalFolder { //NID_TYPE_NORMAL_FOLDER
+    //             let folder_name = pst_reader::get_folder_name(&node, &mut pst_file.file, &pst_file.bbt_map, &pst_file.b_crypt_method)?;
+    //             println!("folder_name: {}", folder_name);
     //             // let property_entries = get_properties(None, &mut block_data, &node, &b_crypt_method, &mut file, &bbt_map)?;
-    //             // // println!("{:#?}", property_entries);
+    //             // // // println!("{:#?}", property_entries);
     //             // for propery_entry in property_entries {
     //             //     println!("  {:?} ({:?}): {}", propery_entry.prop_id, propery_entry.prop_type, propery_entry.value_string)
     //             // }
     //         } else if node.nid_type==NidType::NormalMessage { // NID_TYPE_NORMAL_MESSAGE
-    //             let msg = &pst_file.get_message(&node)?;
-    //             println!("{:#?}", msg.subject);
+    //             // let msg = &pst_file.get_message(&node)?;
+    //             // println!("{:#?}", msg.subject);
     //             // let msg = &pst_file.get_message_header(&node)?;
     //             // println!("{:?}", msg);
     //             // println!();

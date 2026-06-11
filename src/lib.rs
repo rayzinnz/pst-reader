@@ -85,9 +85,9 @@ Value	Friendly name	        Meaning
     // println!("bid_next_b: {}", bid_next_b);
     // println!("b_crypt_method: {}", b_crypt_method);
 
-    read_bt_entry(&mut file, brefbbt, &mut bbt_map, &mut nbt_map)?;
+    read_bt_entry(&mut file, brefbbt, &mut bbt_map, &mut nbt_map, 0)?;
     // println!("{:#?}", bbt_map);
-    read_bt_entry(&mut file, brefnbt, &mut bbt_map, &mut nbt_map)?;
+    read_bt_entry(&mut file, brefnbt, &mut bbt_map, &mut nbt_map, 0)?;
     // println!("{:#?}", nbt_map);
 
 	let pst_file = PstFile {
@@ -127,7 +127,7 @@ pub fn get_message_header(node:&Node, file: &mut File, bbt_map: &HashMap<u64, Bl
     })
 }
 
-pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<Message> {
+pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, nbt_map: &HashMap<u32, Node>, b_crypt_method:&u8) -> Result<Message> {
     let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
     let mut block_data = get_block_data(file, &block_info, false)?;
     
@@ -177,6 +177,17 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
         Some(dt) => dt,
         None => get_prop_datetime_op(&property_entries, &PropId::CreationTime).expect("Always expect a creation time")
     };
+    let folder_name: String;
+    match nbt_map.get(&node.parent) {
+        Some(parent_node) => {
+            if parent_node.nid_type==NidType::NormalFolder {
+                folder_name = get_folder_name(parent_node, file, bbt_map, b_crypt_method)?;
+            } else {
+                folder_name = String::new();
+            }
+        },
+        None => folder_name = String::new(),
+    }
     
     let msg:Message = Message {
         received_time,
@@ -188,14 +199,28 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
         text: text,
         html: html,
         recipients: get_recipients(node, file, bbt_map, b_crypt_method)?,
-        sub_msgs: get_message_attachments(node, file, bbt_map, b_crypt_method)?,
+        sub_msgs: get_message_attachments(node, file, bbt_map, nbt_map, b_crypt_method)?,
         attachments: get_file_attachments(node, file, bbt_map, b_crypt_method)?,
+        folder_name,
     };
 
     Ok(msg)
 }
 
-pub fn get_message_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<Vec<Message>> {
+pub fn get_folder_name(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, b_crypt_method:&u8) -> Result<String> {
+    let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
+    let mut block_data = get_block_data(file, &block_info, false)?;
+    
+    // let prop_ids: Option<Vec<PropId>> = None;
+    let prop_ids: Option<Vec<PropId>> = Some(vec![
+        PropId::DisplayName,
+        ]);
+    let property_entries = get_object_properties(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
+
+    Ok(get_prop_string(&property_entries, &PropId::DisplayName))
+}
+
+pub fn get_message_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, nbt_map: &HashMap<u32, Node>, b_crypt_method:&u8) -> Result<Vec<Message>> {
     let mut sub_msgs: Vec<Message> = Vec::new();
     let attachments_nodes: Vec<(&u32, &Node)> = node.sub_nodes.iter().filter(|n| n.1.nid_type==NidType::Attachment).collect();
     // println!("{:#?}", attachments_nodes);
@@ -203,7 +228,7 @@ pub fn get_message_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u6
         //if there is a subnode 0x04, then this is a message attachment.
         match attachment_node.sub_nodes.iter().find(|n| n.1.nid_type==NidType::NormalMessage) {
             Some((_, message_attachment)) => {
-                let msg = get_message(message_attachment, file, bbt_map, b_crypt_method)?;
+                let msg = get_message(message_attachment, file, bbt_map, nbt_map, b_crypt_method)?;
                 sub_msgs.push(msg);
             },
             None => {},
@@ -267,7 +292,7 @@ pub fn get_file_attachments(node:&Node, file: &mut File, bbt_map: &HashMap<u64, 
                     };
                     attachments.push(attachment);                },
                 None => {
-                    eprintln!("get_file_attachments() #{}: There should always be a bbt entry", attachment_node.0)
+                    bail!("get_file_attachments() #{}: There should always be a bbt entry", attachment_node.0)
                 }
             }
 
@@ -284,8 +309,8 @@ pub fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockI
     if let Some(recipients_node) = recipients_node {
         let node = recipients_node.1;
         if !bbt_map.contains_key(&node.data_bid) {
-            eprintln!("get_recipients(): There should always be a bbt entry");
-            return Ok(recipients);
+            bail!("get_recipients(): There should always be a bbt entry");
+            // return Ok(recipients);
         }
         let block_info = bbt_map.get(&node.data_bid).expect("There should always be a bbt entry");
         let mut block_data = get_block_data(file, &block_info, false)?;
@@ -679,8 +704,8 @@ fn get_xblock_blocks(file: &mut File, bbt_map: &HashMap<u64, BlockInfo>, block_d
         let bid = bid_from_u64(u64::from_le_bytes(bid.try_into().unwrap()));
         // println!("    {bid}");
         if !bbt_map.contains_key(&bid) {
-            eprintln!("get_xblock_blocks(): There should always be a bbt entry");
-            return Ok(xblock_blocks);
+            bail!("get_xblock_blocks(): There should always be a bbt entry");
+            // return Ok(xblock_blocks);
         }
         let block_info = bbt_map.get(&bid).expect("There should always be a bbt entry");
         // println!("    {block_info:?}");
@@ -1030,8 +1055,8 @@ fn get_sub_node_bytes(node:&Node, sub_nid:Hid, mut file: &mut File, bbt_map: &Ha
     // let node = nbt_map.get(&(hid.hid_index as u32)).expect("Missing nbt_map entry");
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/5182eb24-4b0b-4816-aa3f-719cc6e6b018
     if !bbt_map.contains_key(&sub_node.data_bid) {
-        eprintln!("get_sub_node_bytes(): There should always be a bbt entry");
-        return Ok(value);
+        bail!("get_sub_node_bytes(): There should always be a bbt entry");
+        // return Ok(value);
     }
     let block_info = bbt_map.get(&sub_node.data_bid).expect("There should always be a bbt entry");
     let mut block_data = get_block_data(&mut file, &block_info, false)?;
@@ -1083,7 +1108,7 @@ fn get_block_data(file: &mut File, block_info: &BlockInfo, include_trailer:bool)
     Ok(buf)
 }
 
-fn read_bt_entry(file: &mut File, bref: Bref, bbt_map: &mut HashMap<u64, BlockInfo>, nbt_map: &mut HashMap<u32, Node>) -> Result<()> {
+fn read_bt_entry(file: &mut File, bref: Bref, bbt_map: &mut HashMap<u64, BlockInfo>, nbt_map: &mut HashMap<u32, Node>, level:usize) -> Result<()> {
     //intermediate page
     let page = get_page(&file, bref.ib)?;
 
@@ -1114,26 +1139,34 @@ Value	Friendly name	Meaning	                    wSig value
         let rgentries = &page[0..488];
         let c_ent = &page[488];
         // let c_ent_max = &page[489];
-        let cb_ent = &page[490];
+        let cb_ent = &page[490]; //24 bytes
         let c_level = &page[491];
-        // println!("{}, {}, {}, {}", c_ent, c_ent_max, cb_ent, c_level);
-        for ientry in 0..*c_ent {
-            let starting_offset = ientry as usize * *cb_ent as usize;
-            if *c_level==0 {
-                //leaf page
-                // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/53a4b926-8ac4-45c9-9c6d-8358d951dbcd
-                let brefa = get_bref(rgentries[starting_offset..starting_offset+16].try_into().unwrap());
-                let cb = u16::from_le_bytes(rgentries[starting_offset+16..starting_offset+18].try_into().unwrap());
-                // let c_ref = u16::from_le_bytes(rgentries[starting_offset+18..starting_offset+20].try_into().unwrap());
+        // println!("{}, {}, {}", c_ent, cb_ent, c_level);
+        if *c_level==0 {
+            //leaf pages
+            // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/53a4b926-8ac4-45c9-9c6d-8358d951dbcd
+            for (ibref, bref) in rgentries.chunks_exact(*cb_ent as usize).enumerate() {
+                if ibref >= *c_ent as usize { break }
+                
+                let brefa = get_bref(bref[0..16].try_into().unwrap());
+                let cb = u16::from_le_bytes(bref[16..18].try_into().unwrap());
+                // let c_ref = u16::from_le_bytes(bref[18..20].try_into().unwrap());
                 // println!("{:#?}: data len {}", brefa, cb);
-                bbt_map.insert(brefa.bid, BlockInfo { offset: brefa.ib, size: cb as usize });
-            } else {
-                //intermediate page
-                // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/bc8052a3-f300-4022-be31-f0f408fffca0
-                // let btkey = u64::from_le_bytes(rgentries[starting_offset..starting_offset+8].try_into().unwrap());
-                let brefa = get_bref(rgentries[starting_offset+8..starting_offset+24].try_into().unwrap());
-                // println!("{}: {:#?}", btkey, bref);
-                read_bt_entry(file, brefa, bbt_map, nbt_map)?;
+                let block_info = BlockInfo { offset: brefa.ib, size: cb as usize, level };
+                // println!("bbt leaf block_info: {}: {:?}", brefa.bid, block_info);
+                bbt_map.insert(brefa.bid, block_info);
+                // println!("{}", bbt_map.len());
+            }
+        } else {
+            //intermediate pages
+            // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/bc8052a3-f300-4022-be31-f0f408fffca0
+            for (ibref, bref) in rgentries.chunks_exact(*cb_ent as usize).enumerate() {
+                if ibref >= *c_ent as usize { break }
+                
+                // let btkey = u64::from_le_bytes(bref[0..8].try_into().unwrap());
+                let brefa = get_bref(bref[8..24].try_into().unwrap());
+                // println!("  intermediate: {}, {}: {:#?}", level, btkey, brefa);
+                read_bt_entry(file, brefa, bbt_map, nbt_map, level+1)?;
             }
         }
     } else if ptype==&0x81 { //Node BTree page.
@@ -1167,7 +1200,7 @@ Value	Friendly name	Meaning	                    wSig value
                 // let btkey = u64::from_le_bytes(rgentries[starting_offset..starting_offset+8].try_into().unwrap());
                 let brefa = get_bref(rgentries[starting_offset+8..starting_offset+24].try_into().unwrap());
                 // println!("{}: {:#?}", btkey, bref);
-                read_bt_entry(file, brefa, bbt_map, nbt_map)?;
+                read_bt_entry(file, brefa, bbt_map, nbt_map, level+1)?;
             }
         }
     } else {
@@ -1184,8 +1217,8 @@ fn get_sub_nodes(file: &mut File, bbt_map: &mut HashMap<u64, BlockInfo>, nid_par
     }
 
     if !bbt_map.contains_key(&bid_sub) {
-        eprintln!("get_sub_nodes(): There should always be a bbt entry");
-        return Ok(sub_nodes);
+        bail!("get_sub_nodes(): There should always be a bbt entry. bid_sub: {bid_sub}");
+        // return Ok(sub_nodes);
     }
     let block_info = bbt_map.get(&bid_sub).expect("There should always be a bbt entry");
     let block_data = get_block_data(file, &block_info, false)?;

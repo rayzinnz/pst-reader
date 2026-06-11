@@ -18,7 +18,7 @@ impl PstFile {
     }
 
     pub fn get_message(&mut self, node: &Node) -> Result<Message> {
-        get_message(node, &mut self.file, &self.bbt_map, &self.b_crypt_method)
+        get_message(node, &mut self.file, &self.bbt_map, &self.nbt_map, &self.b_crypt_method)
     }
 
     pub fn get_message_header(&mut self, node: &Node) -> Result<MessageHeader> {
@@ -49,6 +49,7 @@ pub struct Bref {
 pub struct BlockInfo {
     pub offset: u64,
     pub size: usize,
+    pub level: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -199,6 +200,7 @@ pub struct Message {
 	pub recipients: Vec<Recipient>,
 	pub sub_msgs: Vec<Message>,
 	pub attachments: Vec<Attachment>,
+    pub folder_name: String,
 }
 
 #[derive(Debug)]

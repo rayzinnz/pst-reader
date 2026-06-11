@@ -63,7 +63,9 @@ pub fn bid_from_u64(input:u64) -> u64 {
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/d3155aa1-ccdd-4dee-a0a9-5363ccca5352
     // first two bits should be ignored
     // Mask with all bits = 1 except the top 2 bits
-    input & !(0b11 << 62)
+    // input & !(0b11 << 62)
+    // Block BIDs reserve the two least significant bits for flags
+    input & !0b11
 }
 
 pub fn get_bid(file: &File, offset:u64) -> Result<u64> {
@@ -72,18 +74,18 @@ pub fn get_bid(file: &File, offset:u64) -> Result<u64> {
     Ok(bid_from_u64(get_u64(file, offset)?))
 }
 
-pub fn get_page(mut file: &File, offset:u64) -> Result<[u8;512]> {
-    file.seek(SeekFrom::Start(offset))?;
-    let mut buffer = vec![0u8; 512];
-    let _ = file.read_exact(&mut buffer);
-    Ok(buffer.try_into().unwrap())
-}
-
 pub fn get_bref(bytes:[u8; 16]) -> Bref {
     Bref {
         bid: bid_from_u64(u64::from_le_bytes(bytes[..8].try_into().unwrap())),
         ib: u64::from_le_bytes(bytes[8..].try_into().unwrap())
     }
+}
+
+pub fn get_page(mut file: &File, offset:u64) -> Result<[u8;512]> {
+    file.seek(SeekFrom::Start(offset))?;
+    let mut buffer = vec![0u8; 512];
+    let _ = file.read_exact(&mut buffer);
+    Ok(buffer.try_into().unwrap())
 }
 
 pub fn get_u8(file: &File, offset:u64) -> Result<u8> { Ok(get_byte(file, offset)?[0]) }
