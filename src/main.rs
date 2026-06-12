@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // C:\program files/Microsoft Office\root\Office16\SCANPST.EXE
     // let pst_path = Path::new("./dev/test.pst");
-    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2019.pst");
+    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2025.pst");
 
     let mut pst_file = PstFile::new(pst_path)?;
     // println!("{}", pst_file.bbt_map.len());
@@ -38,15 +38,15 @@ fn main() -> Result<()> {
     let msghs = pst_file.get_all_message_headers()?;
     // // println!("{:#?}", msgs);
     for (imsg, msgh) in msghs.iter().enumerate() {
-        // println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
-        // let msg = &pst_file.get_message(&msgh.node)?;
+        println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        let msg = &pst_file.get_message(&msgh.node)?;
         // println!("folder_name: {}", msg.folder_name);
-        if msgh.subject.contains("Genereal") {
-            println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
-            let msg = &pst_file.get_message(&msgh.node)?;
-            println!("atts: {}", msg.attachments.len());
-            println!("folder_name: {}", msg.folder_name);
-        }
+        // if msgh.subject.contains("Employee Survey - Friendly reminder") {
+        //     println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
+        //     let msg = &pst_file.get_message(&msgh.node)?;
+        //     println!("atts: {}, recps: {}", msg.attachments.len(), msg.recipients.len());
+        //     println!("folder_name: {}", msg.folder_name);
+        // }
     }
 
 

@@ -464,6 +464,7 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
             let i_bit = chunk[7];
             // println!("  tcoldesc: {}: {},{},{},{}, {:?}", i, tag, ib_data, cb_data, i_bit, property);
             if prop_ids.is_none() || prop_ids.as_ref().unwrap().contains(&property.prop_id) {
+                // println!("property: {}, {:?}", vec_u8_as_hex(&chunk[0..4], true, " "), property);
                 let mut value_string: Option<Vec<String>> = None;
                 let mut value_bool: Option<Vec<bool>> = None;
                 let mut value_i16: Option<Vec<i16>> = None;
@@ -561,9 +562,18 @@ fn get_table_context(prop_ids:&Option<Vec<PropId>>, hn_blocks: &Vec<HNBlock>, no
 
             if f_ceb {
                 let mut prop_value = row[col.data_offset as usize..col.data_offset as usize + col.data_size as usize].to_vec();
-                // println!("    {}; {}", vec_u8_as_hex(&prop_value, true, " "), string_from_utf16_as_vec_u8(&prop_value));
+                // println!("    {:?}: {}; {}", col.property, vec_u8_as_hex(&prop_value, true, " "), string_from_utf16_as_vec_u8(&prop_value));
                 if [PropType::String, PropType::String8,PropType::Integer64,PropType::Floating64,PropType::Binary,PropType::Time,PropType::Guid].contains(&col.property.prop_type) {
-                    prop_value = get_bytes_from_hid(u32::from_le_bytes(prop_value.try_into().unwrap()), &hn_blocks, node, bbt_map, file, b_crypt_method)?;
+                    match get_bytes_from_hid(u32::from_le_bytes(prop_value.try_into().unwrap()), &hn_blocks, node, bbt_map, file, b_crypt_method) {
+                        Ok(val) => prop_value = val,
+                        Err(e) => {
+                            if [PropType::String, PropType::String8,PropType::Binary].contains(&col.property.prop_type) {
+                                prop_value = Vec::new();
+                            } else {
+                                return Err(e.into());
+                            }
+                        }
+                    }
                 }
                 match col.property.prop_type {
                     PropType::String => { value_string = string_from_utf16_as_vec_u8(&prop_value); }
@@ -1015,15 +1025,24 @@ fn get_bytes_from_hid(hid:u32, hn_blocks: &Vec<HNBlock>, node:&Node, bbt_map: &H
         return Ok(Vec::new());
     }
     let hid = Hid::new(hid);
+    // println!("get_bytes_from_hid() hid: {:?}", hid);
 
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/85b9e985-ea53-447f-b70c-eb82bfbdcbc9
     // println!("    property_entry: {:04X}, {:04X}, {:?}", w_prop_id, w_prop_type, hid);
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/7ac490ce-31af-4a75-97df-eb9d07a003fd
     //    The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID.
-    if hid.hid_type==0 && hid.hid_index!=0 {
+    if hid.hid_type==0 {
         //HNID is a HID (<= 3580 bytes)
         if hid.hid_type!=0 { bail!("hid.hid_type MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.") }
         if hid.hid_index==0 { bail!("get_bytes_from_hid(): hid.hid_index is a 1-based index, MUST NOT be zero.\n{:?}", hid) }
+        if hid.hid_block_index as usize >= hn_blocks.len() {
+            // println!("Forced trace:\n{}", std::backtrace::Backtrace::force_capture());
+            bail!("hid.hid_block_index > hn_blocks.len() ({} > {}): {:?}", hid.hid_block_index, hn_blocks.len(), hid)
+        }
+        if hid.hid_index as usize >= hn_blocks[hid.hid_block_index as usize].bth_chunks.len() {
+            // println!("Forced trace:\n{}", std::backtrace::Backtrace::force_capture());
+            bail!("hid.hid_index >= hn_blocks[hid.hid_block_index as usize].bth_chunks.len() ({} > {}): {:?}", hid.hid_index, hn_blocks[hid.hid_block_index as usize].bth_chunks.len(), hid)
+        }
         let value = &hn_blocks[hid.hid_block_index as usize].bth_chunks[hid.hid_index as usize];
         return Ok(value.to_vec());
     } else {
