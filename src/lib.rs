@@ -155,7 +155,7 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
     // println!("{}", String::from_utf8_lossy(&property_entries[&PropId::Html].value_binary.as_ref().unwrap()));
 
     let subject = get_prop_string(&property_entries, &PropId::Subject);
-    println!("subject: '{subject}'");
+    // println!("subject: '{subject}'");
     let mut conversation = get_prop_string(&property_entries, &PropId::ConversationTopic);
     if conversation.is_empty() {
         conversation = get_prop_string(&property_entries, &PropId::NormalizedSubject);
