@@ -6,6 +6,11 @@
 
 use std::{collections::HashMap, fs::File, io::{Read, Seek, SeekFrom}};
 
+#[cfg(unix)]
+use std::os::unix::fs::FileExt;
+#[cfg(windows)]
+use std::os::windows::fs::FileExt;
+
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 
@@ -24,17 +29,31 @@ pub fn check_magic_bytes(mut file: &File) -> bool {
     }
 }
 
-pub fn get_byte(mut file: &File, offset:u64) -> Result<[u8;1]> {
-    file.seek(SeekFrom::Start(offset))?;
+pub fn get_byte(file: &File, offset:u64) -> Result<[u8;1]> {
     let mut buffer = vec![0u8; 1];
-    let _ = file.read_exact(&mut buffer);
+    #[cfg(unix)]
+    let _ = file.read_at(&mut buffer, offset);
+    #[cfg(windows)]
+    let _ = file.seek_read(&mut buffer, offset);
+    #[cfg(not(any(unix, windows)))]
+    {
+        file.seek(SeekFrom::Start(offset))?;
+        let _ = file.read_exact(&mut buffer);
+    }
     Ok(buffer.try_into().unwrap())
 }
 
-pub fn get_word(mut file: &File, offset:u64) -> Result<[u8;2]> {
-    file.seek(SeekFrom::Start(offset))?;
+pub fn get_word(file: &File, offset:u64) -> Result<[u8;2]> {
     let mut buffer = vec![0u8; 2];
-    let _ = file.read_exact(&mut buffer);
+    #[cfg(unix)]
+    let _ = file.read_at(&mut buffer, offset);
+    #[cfg(windows)]
+    let _ = file.seek_read(&mut buffer, offset);
+    #[cfg(not(any(unix, windows)))]
+    {
+        file.seek(SeekFrom::Start(offset))?;
+        let _ = file.read_exact(&mut buffer);
+    }
     Ok(buffer.try_into().unwrap())
 }
 
@@ -45,10 +64,17 @@ pub fn get_word(mut file: &File, offset:u64) -> Result<[u8;2]> {
 //     Ok(buffer.try_into().unwrap())
 // }
 
-pub fn get_qword(mut file: &File, offset:u64) -> Result<[u8;8]> {
-    file.seek(SeekFrom::Start(offset))?;
+pub fn get_qword(file: &File, offset:u64) -> Result<[u8;8]> {
     let mut buffer = vec![0u8; 8];
-    let _ = file.read_exact(&mut buffer);
+    #[cfg(unix)]
+    let _ = file.read_at(&mut buffer, offset);
+    #[cfg(windows)]
+    let _ = file.seek_read(&mut buffer, offset);
+    #[cfg(not(any(unix, windows)))]
+    {
+        file.seek(SeekFrom::Start(offset))?;
+        let _ = file.read_exact(&mut buffer);
+    }
     Ok(buffer.try_into().unwrap())
 }
 
@@ -61,9 +87,6 @@ pub fn get_qword(mut file: &File, offset:u64) -> Result<[u8;8]> {
 
 pub fn bid_from_u64(input:u64) -> u64 {
     // https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/d3155aa1-ccdd-4dee-a0a9-5363ccca5352
-    // first two bits should be ignored
-    // Mask with all bits = 1 except the top 2 bits
-    // input & !(0b11 << 62)
     // Block BIDs reserve the two least significant bits for flags
     input & !0b11
 }
@@ -81,10 +104,18 @@ pub fn get_bref(bytes:[u8; 16]) -> Bref {
     }
 }
 
-pub fn get_page(mut file: &File, offset:u64) -> Result<[u8;512]> {
-    file.seek(SeekFrom::Start(offset))?;
+pub fn get_page(file: &File, offset:u64) -> Result<[u8;512]> {
     let mut buffer = vec![0u8; 512];
-    let _ = file.read_exact(&mut buffer);
+    #[cfg(unix)]
+    let _ = file.read_at(&mut buffer, offset);
+    #[cfg(windows)]
+    let _ = file.seek_read(&mut buffer, offset);
+    #[cfg(not(any(unix, windows)))]
+    {
+        file.seek(SeekFrom::Start(offset))?;
+        let _ = file.read_exact(&mut buffer);
+    }
+    
     Ok(buffer.try_into().unwrap())
 }
 

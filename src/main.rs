@@ -28,26 +28,28 @@ fn main() -> Result<()> {
 
     // C:\program files/Microsoft Office\root\Office16\SCANPST.EXE
     // let pst_path = Path::new("./dev/test.pst");
-    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2025.pst");
+    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2018.pst");
 
     let mut pst_file = PstFile::new(pst_path)?;
     // println!("{}", pst_file.bbt_map.len());
     // println!("{:#?}", pst_file.bbt_map);
     // println!("{:#?}", pst_file.nbt_map);
 
+    info!("start get_all_message_headers");
     let msghs = pst_file.get_all_message_headers()?;
+    info!("end get_all_message_headers");
     // // println!("{:#?}", msgs);
-    for (imsg, msgh) in msghs.iter().enumerate() {
-        println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
-        let msg = &pst_file.get_message(&msgh.node)?;
-        // println!("folder_name: {}", msg.folder_name);
-        // if msgh.subject.contains("Employee Survey - Friendly reminder") {
-        //     println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
-        //     let msg = &pst_file.get_message(&msgh.node)?;
-        //     println!("atts: {}, recps: {}", msg.attachments.len(), msg.recipients.len());
-        //     println!("folder_name: {}", msg.folder_name);
-        // }
-    }
+    // for (imsg, msgh) in msghs.iter().enumerate() {
+    //     println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+    //     let msg = &pst_file.get_message(&msgh.node)?;
+    //     // println!("folder_name: {}", msg.folder_name);
+    //     // if msgh.subject.contains("Employee Survey - Friendly reminder") {
+    //     //     println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
+    //     //     let msg = &pst_file.get_message(&msgh.node)?;
+    //     //     println!("atts: {}, recps: {}", msg.attachments.len(), msg.recipients.len());
+    //     //     println!("folder_name: {}", msg.folder_name);
+    //     // }
+    // }
 
 
     // for (_, node) in pst_file.nbt_map.clone() {
