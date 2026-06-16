@@ -183,6 +183,7 @@ pub struct Attachment {
 pub struct Recipient {
     pub display_name: String,
     pub email_address: String,
+    pub ex_address: String,
     pub recipient_type: RecipientType,
 }
 
@@ -194,6 +195,7 @@ pub struct Message {
 	pub conversation: String,
 	pub sender_name: String,
 	pub sender_email_address: String,
+    pub sender_ex_address: String,
 	pub sent_time: Option<DateTime<Utc>>,
 	pub text: String,
 	pub html: String,

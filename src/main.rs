@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use anyhow::{Result};
+use anyhow::{Result, bail};
 use log::*;
 
 #[allow(unused_imports)]
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // C:\program files/Microsoft Office\root\Office16\SCANPST.EXE
     // let pst_path = Path::new("./dev/test.pst");
-    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2018.pst");
+    let pst_path = Path::new(r"C:\Users\hrag\OutlookData\2019.pst");
 
     let mut pst_file = PstFile::new(pst_path)?;
     // println!("{}", pst_file.bbt_map.len());
@@ -39,17 +39,28 @@ fn main() -> Result<()> {
     let msghs = pst_file.get_all_message_headers()?;
     info!("end get_all_message_headers");
     // // println!("{:#?}", msgs);
-    // for (imsg, msgh) in msghs.iter().enumerate() {
-    //     println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
-    //     let msg = &pst_file.get_message(&msgh.node)?;
-    //     // println!("folder_name: {}", msg.folder_name);
-    //     // if msgh.subject.contains("Employee Survey - Friendly reminder") {
-    //     //     println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
-    //     //     let msg = &pst_file.get_message(&msgh.node)?;
-    //     //     println!("atts: {}, recps: {}", msg.attachments.len(), msg.recipients.len());
-    //     //     println!("folder_name: {}", msg.folder_name);
-    //     // }
-    // }
+    for (imsg, msgh) in msghs.iter().enumerate() {
+        println!("{}: ({}) {}", imsg, msgh.node.nid, msgh.subject);
+        let msg = &pst_file.get_message(&msgh.node)?;
+        // println!("{:#?}", msg);
+        // println!("received_time: {}", msg.received_time);
+        // println!("folder_name: {}", msg.folder_name);
+        // println!("sender_email_address: {}", msg.sender_email_address);
+        // for recipient in &msg.recipients {
+        //     println!("{:?}", recipient);
+        // }
+        //if msg.sender_email_address.is_empty() && msg.folder_name!="Sent Items" && msg.sender_name!="Ray Gabriel" {
+        if msg.sender_email_address.is_empty() {
+            bail!("Unexpected empty sender_email_address: {}, {}, {}", msg.sender_name, msg.subject, msg.sender_email_address)
+        }
+        // if msgh.subject.contains("Employee Survey - Friendly reminder") {
+        //     println!("{}: ({}) {} {}", imsg, msgh.node.nid, msgh.received_time, msgh.subject);
+        //     let msg = &pst_file.get_message(&msgh.node)?;
+        //     println!("atts: {}, recps: {}", msg.attachments.len(), msg.recipients.len());
+        //     println!("folder_name: {}", msg.folder_name);
+        // }
+        // break
+    }
 
 
     // for (_, node) in pst_file.nbt_map.clone() {

@@ -141,8 +141,11 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
         PropId::MessageDeliveryTime,
         PropId::NormalizedSubject,
         PropId::RtfCompressed,
+        PropId::SenderAddressType,
+        PropId::SenderEmailAddress,
         PropId::SenderName,
         PropId::SenderSmtpAddress,
+        PropId::SentRepresentingSmtpAddress,
         PropId::Subject,
         ]);
     // println!("props for get_message():\n{:#?}", prop_ids);
@@ -162,6 +165,20 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
     }
     if conversation.is_empty() {
         conversation = subject.to_string();
+    }
+    let sender_address_type = get_prop_string(&property_entries, &PropId::SenderAddressType);
+    let mut sender_email_address = get_prop_string(&property_entries, &PropId::SenderSmtpAddress);
+    if sender_email_address.is_empty() {
+        sender_email_address = get_prop_string(&property_entries, &PropId::SentRepresentingSmtpAddress);
+    }
+    if sender_email_address.is_empty() && sender_address_type=="SMTP" {
+        sender_email_address = get_prop_string(&property_entries, &PropId::SenderEmailAddress);
+    }
+    let sender_ex_address: String;
+    if sender_address_type=="EX" {
+        sender_ex_address = get_prop_string(&property_entries, &PropId::SenderEmailAddress);
+    } else {
+        sender_ex_address = String::new();
     }
     let text = get_prop_string(&property_entries, &PropId::Body);
     let mut html = get_prop_string(&property_entries, &PropId::Html);
@@ -194,7 +211,8 @@ pub fn get_message(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockInfo
         subject,
         conversation,
         sender_name: get_prop_string(&property_entries, &PropId::SenderName),
-        sender_email_address: get_prop_string(&property_entries, &PropId::SenderSmtpAddress),
+        sender_email_address,
+        sender_ex_address,
         sent_time: get_prop_datetime_op(&property_entries, &PropId::ClientSubmitTime),
         text: text,
         html: html,
@@ -317,29 +335,31 @@ pub fn get_recipients(node:&Node, file: &mut File, bbt_map: &HashMap<u64, BlockI
         // println!("{}, {}", block_info.size, block_data.len());
         // println!("{}", vec_u8_as_hex(&block_data, true, " "));
         
-        let prop_ids = Some(vec![PropId::DisplayName, PropId::SmtpAddress, PropId::RecipientType]);
+        let prop_ids = Some(vec![PropId::AddressType, PropId::DisplayName, PropId::EmailAddress, PropId::SmtpAddress, PropId::RecipientType]);
         // println!("props for get_recipients():\n{:#?}", prop_ids);
         let table_rows = get_table(&prop_ids, &mut block_data, &node, &b_crypt_method, file, &bbt_map)?;
         // println!("{:#?}", table_rows);
         for irow in 0..table_rows.num_rows {
             let column_entries = &table_rows.rows;
             let display_name = get_column_entry_string(column_entries, PropId::DisplayName, irow)?;
-            let email_address: String;
-            match get_column_entry_string(column_entries, PropId::SmtpAddress, irow) {
-                Ok(v) => email_address = v,
-                Err(_) => {
-                    match get_column_entry_string(column_entries, PropId::EmailAddress, irow) {
-                        Ok(v) => email_address = v,
-                        Err(_) => email_address = String::new()
-                    }
-                }
+
+            let address_type = get_column_entry_string(column_entries, PropId::AddressType, irow).unwrap_or_default();
+            let mut email_address = get_column_entry_string(column_entries, PropId::SmtpAddress, irow).unwrap_or_default();
+            if email_address.is_empty() && address_type=="SMTP" {
+                email_address = get_column_entry_string(column_entries, PropId::EmailAddress, irow).unwrap_or_default();
             }
-            // let email_address = get_column_entry_string(column_entries, PropId::SmtpAddress, irow)?;
+            let ex_address: String;
+            if address_type=="EX" {
+                ex_address = get_column_entry_string(column_entries, PropId::EmailAddress, irow).unwrap_or_default();
+            } else {
+                ex_address = String::new();
+            }
             let recipient_type = get_column_entry_i32(column_entries, PropId::RecipientType, irow)?;
             let recipient_type = RecipientType::try_from(recipient_type as u8).unwrap_or(RecipientType::To);
             let recipient = Recipient {
-                display_name: display_name.clone(),
-                email_address: email_address.clone(),
+                display_name,
+                email_address,
+                ex_address,
                 recipient_type,
             };
             // println!("{}: {:#?}", irow, recipient);
